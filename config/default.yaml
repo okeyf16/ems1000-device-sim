@@ -1,0 +1,22 @@
+# EMS-1000 virtual device simulator - default configuration
+
+devices:
+  - ems-sim-01          # add ems-sim-02 ... to simulate more (mind the free-tier budget)
+
+telemetry:
+  schema_version: 1
+  heartbeat_seconds: 60 # firmware spec; use --interval 10 for demos
+  max_payload_bytes: 512
+
+budget:
+  daily_limit: 8000     # IoT Hub F1 free tier, all devices + direct methods combined
+  stop_at: 7500         # simulator stops sending at this count (UTC day), leaves headroom
+
+sensors:                # baseline values used while the generator is OFF (M1)
+  ambient_temp_c: 28.0
+  battery_rest_v: 12.6
+  fuel_start_pct: 85.0
+  rssi_start_dbm: -68
+  noise: true           # small random jitter on analogue readings
+
+state_dir: .state       # persisted boot counter + daily message count
