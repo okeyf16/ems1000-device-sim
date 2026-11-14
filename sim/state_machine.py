@@ -149,13 +149,18 @@ class Generator:
         self._set_state(RunState.OFF)
         return self._reply(200, "cleared")
 
-    def trip(self, bits: int, reason: str) -> None:
-        """A fault while running or cranking (used by M3 fault injection): kill the engine."""
+    def trip(self, bits: int, reason: str) -> bool:
+        """A fault while running or cranking (M3 automatic faults): kill the engine.
+        Returns False (and does nothing) if the engine is not cranking or running."""
+        with self._lock:
+            if self.state not in (RunState.CRANK, RunState.RUN):
+                return False
         self._cancel_timer()
         with self._lock:
             self.flt |= bits
         log.warning("generator fault: %s", reason)
         self._set_state(RunState.FAULT)
+        return True
 
     def shutdown(self) -> None:
         self._cancel_timer()

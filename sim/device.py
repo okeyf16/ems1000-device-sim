@@ -1,7 +1,8 @@
 """One simulated EMS-1000 device.
 
-Heartbeat loop (sensors -> payload -> transport) plus, from M2, the generator state
-machine and direct-method commands. Every state change sends an extra telemetry
+Heartbeat loop (model -> payload -> transport), the generator state machine and
+direct-method commands (M2), and the physics-lite ECO4990ES model (M3), stepped
+once per tick. Every state change, new alert or warning sends an extra telemetry
 message straight away, like the firmware's on-change publish.
 """
 
@@ -15,7 +16,7 @@ from .budget import BudgetGuard
 from .commands import CommandHandler
 from .config import SimConfig
 from .persist import next_boot_count
-from .sensors import SensorModel
+from .physics import GeneratorModel
 from .state_machine import STATE_NAMES, Generator, RunState
 from .telemetry import PayloadError, build_payload, new_traceparent, validate
 from .transport import Transport
@@ -33,13 +34,13 @@ class VirtualDevice:
         self.budget = budget          # None in dry-run mode
         self.stop_event = stop_event
         self.interval = interval if interval is not None else cfg.heartbeat_seconds
-        self.sensors = SensorModel(cfg.sensors)
+        self.model = GeneratorModel(cfg.sensors)
         self.boot = next_boot_count(cfg.state_dir, device_id)
         self.seq = 0
         self._send_lock = threading.Lock()  # heartbeat, timers and commands run on different threads
 
         self.generator = Generator(
-            safety_check=self.sensors.safety_check,
+            safety_check=self.model.safety_check,
             on_change=self._on_state_change,
             crank_seconds=cfg.crank_seconds,
             stop_seconds=cfg.stop_seconds,
@@ -47,19 +48,50 @@ class VirtualDevice:
         )
         self.commands = CommandHandler(
             self.generator,
-            snapshot=lambda: dataclasses.asdict(self.sensors.read(int(self.generator.state))),
+            snapshot=self._snapshot,
             on_command=(lambda: self.budget.record()) if self.budget else None,
         )
         self.transport.set_method_handler(self.commands.handle)
 
-    # Kept for compatibility with M1 callers/tests
+    # Kept for compatibility with M1/M2 callers and tests
+    @property
+    def sensors(self) -> GeneratorModel:
+        return self.model
+
     @property
     def run_state(self) -> int:
         return int(self.generator.state)
 
     @property
     def flt(self) -> int:
-        return self.generator.flt
+        """Telemetry bitmask: latched faults (0-3) plus live alerts (4-5)."""
+        return self.generator.flt | self.model.alert_bits
+
+    def _snapshot(self) -> dict:
+        snap = dataclasses.asdict(self.model.read(int(self.generator.state)))
+        snap["flt"] = self.flt
+        snap["model"] = self.model.extras()
+        return snap
+
+    def tick(self, dt_model: float) -> None:
+        """Advance the model by dt_model simulated seconds and act on what happened."""
+        ev = self.model.step(dt_model, int(self.generator.state))
+        tripped = False
+        for bits, reason in ev.faults:
+            tripped = self.generator.trip(bits, reason) or tripped  # sends telemetry on change
+        if not tripped and (ev.alerts_changed or ev.warnings_changed or ev.breaker_tripped):
+            what = ", ".join(w for w, on in (("breaker tripped", ev.breaker_tripped),
+                                             ("alerts", ev.alerts_changed),
+                                             ("warnings", ev.warnings_changed)) if on)
+            self.send_telemetry(reason=f"change: {what} {sorted(self.model.warnings)}")
+
+    def _ticker(self) -> None:
+        step = self.cfg.tick_seconds
+        while not self.stop_event.wait(step):
+            try:
+                self.tick(step * self.cfg.speed)
+            except Exception:  # noqa: BLE001 - keep the device alive
+                log.exception("[%s] model tick failed", self.device_id)
 
     def _on_state_change(self, old: RunState, new: RunState) -> None:
         self.send_telemetry(reason=f"state {STATE_NAMES[old]}->{STATE_NAMES[new]}")
@@ -72,8 +104,8 @@ class VirtualDevice:
             run = int(self.generator.state)
             payload = build_payload(
                 schema_version=self.cfg.schema_version, device_id=self.device_id,
-                boot=self.boot, seq=self.seq, reading=self.sensors.read(run),
-                flt=self.generator.flt, run=run,
+                boot=self.boot, seq=self.seq, reading=self.model.read(run),
+                flt=self.flt, run=run,
             )
             try:
                 body = validate(payload, self.cfg.max_payload_bytes)
@@ -90,6 +122,7 @@ class VirtualDevice:
         log.info("[%s] boot #%d, heartbeat every %ss, listening for commands",
                  self.device_id, self.boot, self.interval)
         self.transport.connect()
+        threading.Thread(target=self._ticker, name=f"{self.device_id}-model", daemon=True).start()
         try:
             sent = 0
             while not self.stop_event.is_set():
