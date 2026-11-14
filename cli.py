@@ -8,6 +8,7 @@ Examples:
   python cli.py run --interval 10 --speed 60            # engine time 60x faster
   python cli.py run --interval 10 --scenario overload   # play config/scenarios/overload.yaml
   python cli.py run --headless --scenario out-of-fuel   # no keyboard (containers, CI)
+  python cli.py run --interval 10 --panel               # web control panel on port 8080
   python cli.py scenarios                               # list scenarios
   python cli.py budget                                  # messages used today
 """
@@ -25,6 +26,7 @@ from sim.config import connection_string_for, load_config
 from sim.controls import Controls
 from sim.device import VirtualDevice
 from sim.keyboard import start_keyboard
+from sim.panel.server import Panel, serve
 from sim.scenario import ScenarioRunner, available, load_scenario, start_scenario
 from sim.transport import AzureSdkTransport, DryRunTransport
 
@@ -81,9 +83,17 @@ def cmd_run(args) -> int:
         t.start()
     if not args.headless:
         start_keyboard(controls, stop)
+    runner = None
     if scenario:
         stop.wait(1.0)  # let the device connect first
-        start_scenario(ScenarioRunner(scenario, controls, stop))
+        runner = ScenarioRunner(scenario, controls, stop)
+        start_scenario(runner)
+    if args.panel:
+        try:
+            serve(Panel(controls, stop, cfg.panel_api_url, runner), args.panel_host,
+                  args.panel_port or cfg.panel_port)
+        except OSError as err:
+            logging.error("Web panel could not start on port %s: %s", args.panel_port or cfg.panel_port, err)
     while any(t.is_alive() for t in threads):
         for t in threads:
             t.join(timeout=0.5)
@@ -121,6 +131,10 @@ def main(argv=None) -> int:
     r.add_argument("--scenario", help="play a scenario: name in config/scenarios or a .yaml path")
     r.add_argument("--headless", action="store_true",
                    help="no keyboard shortcuts (containers, CI, background runs)")
+    r.add_argument("--panel", action="store_true", help="start the web control panel (default port 8080)")
+    r.add_argument("--panel-port", type=int, help="web panel port (default from config, 8080)")
+    r.add_argument("--panel-host", default="127.0.0.1",
+                   help="web panel address (default 127.0.0.1; use 0.0.0.0 inside a container)")
     r.set_defaults(fn=cmd_run)
 
     sc = sub.add_parser("scenarios", help="list the scenarios")

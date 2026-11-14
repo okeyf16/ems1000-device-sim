@@ -3,7 +3,7 @@
 A Python virtual **EMS-1000** generator controller that replaces the Wokwi ESP32 simulation (`wokwi-proj-09`).
 It connects to Azure IoT Hub over MQTT (TLS, port 8883) and sends the same telemetry the firmware sends.
 
-**Status: M5.** Heartbeat telemetry (M1), state machine + direct-method commands (M2), a physics-lite model of the **Sumec Firman ECO4990ES** with automatic faults, keyboard shortcuts, YAML scenarios and `--speed` (M3), CI, a Docker image and test/troubleshooting guides (M4), device twin with remote settings (M5).
+**Status: M5.** Heartbeat telemetry (M1), state machine + direct-method commands (M2), a physics-lite model of the **Sumec Firman ECO4990ES** with automatic faults, keyboard shortcuts, YAML scenarios and `--speed` (M3), CI, a Docker image and test/troubleshooting guides (M4), device twin with remote settings (M5), local web control panel (M6).
 
 [![CI](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml)
 
@@ -223,6 +223,31 @@ The sim keeps its IoT Hub **device twin** up to date and accepts settings throug
 - Keys and the twin can both change load and speed: the last change wins, and `settings` shows what's in use.
 - Each twin update counts as one message in the daily budget (a few dozen a day).
 
+## Web control panel (M6)
+
+```bash
+python cli.py run --interval 10 --panel
+```
+
+In a Codespace, a notification offers **Open in Browser** for port 8080 (or use the **Ports** tab →
+*EMS panel* → globe icon). Locally, open http://localhost:8080.
+
+| Area | What it does |
+|---|---|
+| Lamps | Off / Cranking / Running / Stopping / Fault, like the generator controller's annunciator |
+| Dials | Voltage, current, frequency, fuel, temperature, battery, with green/amber/red bands at the sim's own limits; faults, alerts and warnings in plain words |
+| Controls | Start, stop, reset fault; load slider; fault injection (oil, fuel 9 % / empty / refuel, overheat, weak battery, breaker reset); speed |
+| Scenario | Play or stop any scenario, with step-by-step progress |
+| History | The last 30 minutes as charts (kept in the sim's memory; running periods shaded, faults marked) |
+| What Azure holds | The staging API's `/state` and `/twin` every 10 s while the page is visible, with plain-words checks when the cloud is behind or differs |
+
+- The panel itself uses no IoT Hub messages; its buttons do what the keys do (and the keys still work).
+- **Access (solo):** the panel listens on 127.0.0.1 and the Codespace port is **Private** by default, so only you
+  (signed in to GitHub) can open it. Keep it private: there's no PIN yet (planned add-on for shareable links).
+  Actions need the panel's own header and JSON body, so other websites can't trigger them.
+- Cloud view: `panel.api_url` in `config/default.yaml` (or `EMS_API_URL`); empty turns it off.
+- Options: `--panel-port 8081`; `--panel-host 0.0.0.0` only inside a container (`docker run -p 8080:8080 …`).
+
 ## Docker
 
 The image runs the simulator headless (no keyboard). Secrets are passed in at run time, never
@@ -246,7 +271,7 @@ Not deployed anywhere yet; Azure Container Apps is the planned home for 24/7 run
 ```bash
 pip install -r requirements-dev.txt
 ruff check .        # lint (config in pyproject.toml)
-pytest -q           # 109 tests, ~13 s
+pytest -q           # 140 tests, ~20 s
 ```
 
 The same checks run in GitHub Actions on every pull request and push to `main` (`.github/workflows/ci.yml`).
@@ -275,6 +300,7 @@ sim/controls.py       local actions + keyboard shortcut map (M3)
 sim/keyboard.py       single-key input in the terminal (M3)
 sim/scenario.py       YAML scenario loader and player (M3)
 sim/twin.py           device twin: reported properties, desired settings (M5)
+sim/panel/            web control panel: server.py + static page (M6)
 config/scenarios/     scenario files (M3)
 docs/                 live test guide, troubleshooting (M4)
 Dockerfile            headless container image (M4)

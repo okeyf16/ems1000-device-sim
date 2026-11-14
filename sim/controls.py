@@ -18,7 +18,7 @@ OIL_NAMES = {0: "OK", 1: "low (warning)", 2: "critical"}
 ACTION_NAMES = frozenset({
     "start", "stop", "reset_fault", "load", "load_up", "load_down", "oil", "oil_cycle",
     "fuel", "fuel_low", "fuel_empty", "refuel", "overheat", "weak_battery",
-    "reset_breaker", "send", "status",
+    "reset_breaker", "send", "status", "speed",
 })
 
 
@@ -52,6 +52,7 @@ class Controls:
             "reset_breaker": self.reset_breaker,
             "send": self.send,
             "status": self.status,
+            "speed": self.speed,
         }
         assert set(self.actions) == ACTION_NAMES
 
@@ -104,6 +105,10 @@ class Controls:
         if ok and msg == "breaker reset":
             self.device.send_telemetry(reason="breaker reset")
         return msg if ok else f"refused - {msg}"
+
+    def speed(self, value: Any) -> str:
+        self.device.speed = max(1.0, min(3600.0, float(value)))
+        return f"speed {self.device.speed:g}x"
 
     def send(self, _: Any = None) -> str:
         return "telemetry sent" if self.device.send_telemetry(reason="manual") else "not sent (budget)"

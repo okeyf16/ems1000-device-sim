@@ -56,4 +56,8 @@ sensors:
   frequency_high_hz: 52.0
   noise: true                   # small random jitter on readings
 
+panel:                  # web control panel: python cli.py run --panel
+  port: 8080
+  api_url: https://app-ems1000-stg-4s1y.azurewebsites.net   # cloud view; EMS_API_URL overrides, empty = off
+
 state_dir: .state       # persisted boot counter + daily message count

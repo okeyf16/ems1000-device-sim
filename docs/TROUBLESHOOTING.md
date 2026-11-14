@@ -18,6 +18,16 @@ Problems met while building the EMS-1000 staging pipeline, by symptom. Pipeline:
 | `docker: command not found` in the Codespace | Codespace not rebuilt since Docker was added | Ctrl+Shift+P → **Codespaces: Rebuild Container** |
 | Codespace stopped by itself | Idle timeout (30 min default), or monthly quota used | Restart it. Long unattended runs belong in a container (see README, Docker) |
 
+## Web panel
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| "Web panel could not start on port 8080" | Another sim (or something else) already uses the port | Stop the other sim, or `--panel-port 8081` |
+| Red banner "The panel can't reach the simulator" | The sim was stopped (Ctrl+C) or crashed | Restart `python cli.py run --panel`; the page reconnects by itself |
+| No Codespaces notification for 8080 | Notifications dismissed, or codespace not rebuilt since M6 | **Ports** tab → Forward a Port → 8080 |
+| *What Azure holds* shows HTTP errors | Staging API down, quota exceeded (403), or wrong `panel.api_url` | Open the API's `/docs`; App Service quotas (see README); check the URL |
+| Cloud view says the last message is old | Telemetry isn't reaching Azure | See *Telemetry doesn't arrive* below |
+
 ## Telemetry doesn't arrive
 
 Check each hop in order; IoT Hub metrics lag 5–10 minutes.
