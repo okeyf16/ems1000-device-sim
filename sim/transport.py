@@ -8,6 +8,10 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from typing import Any, Callable
+
+# (method_name, payload, request_id) -> (status, response_body)
+MethodHandler = Callable[[str, Any, str], tuple[int, dict]]
 
 log = logging.getLogger(__name__)
 
@@ -21,6 +25,10 @@ class Transport(ABC):
 
     @abstractmethod
     def disconnect(self) -> None: ...
+
+    @abstractmethod
+    def set_method_handler(self, handler: MethodHandler) -> None:
+        """Register the direct-method handler. Call before connect()."""
 
 
 class AzureSdkTransport(Transport):
@@ -43,6 +51,19 @@ class AzureSdkTransport(Transport):
     def _on_state_change(self) -> None:
         state = "connected" if self._client.connected else "DISCONNECTED (SDK will retry)"
         log.info("[%s] IoT Hub connection %s", self.device_id, state)
+
+    def set_method_handler(self, handler: MethodHandler) -> None:
+        from azure.iot.device import MethodResponse
+
+        def _on_method(request) -> None:
+            try:
+                status, body = handler(request.name, request.payload, request.request_id)
+            except Exception:  # noqa: BLE001 - never leave IoT Hub waiting for a reply
+                log.exception("[%s] method %s failed", self.device_id, request.name)
+                status, body = 500, {"result": "error"}
+            self._client.send_method_response(MethodResponse.create_from_method_request(request, status, body))
+
+        self._client.on_method_request_received = _on_method
 
     def connect(self) -> None:
         self._client.connect()
@@ -67,6 +88,7 @@ class DryRunTransport(Transport):
     def __init__(self, device_id: str):
         self.device_id = device_id
         self.sent: list[tuple[str, str]] = []
+        self._handler: MethodHandler | None = None
 
     def connect(self) -> None:
         log.info("[%s] DRY RUN - not connecting to IoT Hub", self.device_id)
@@ -76,3 +98,12 @@ class DryRunTransport(Transport):
 
     def disconnect(self) -> None:
         pass
+
+    def set_method_handler(self, handler: MethodHandler) -> None:
+        self._handler = handler
+
+    def invoke(self, method_name: str, payload: Any = None, request_id: str = "dry-run") -> tuple[int, dict]:
+        """Test hook: deliver a direct method as IoT Hub would."""
+        if self._handler is None:
+            raise RuntimeError("no method handler registered")
+        return self._handler(method_name, payload, request_id)

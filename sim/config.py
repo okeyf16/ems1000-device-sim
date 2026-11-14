@@ -21,6 +21,8 @@ class SimConfig:
     daily_limit: int = 8000
     stop_at: int = 7500
     sensors: dict = field(default_factory=dict)
+    crank_seconds: float = 2.5
+    stop_seconds: float = 3.0
     state_dir: Path = Path(".state")
 
 
@@ -43,6 +45,8 @@ def load_config(path: str | Path | None = None) -> SimConfig:
         daily_limit=int(bud.get("daily_limit", 8000)),
         stop_at=int(bud.get("stop_at", 7500)),
         sensors=raw.get("sensors", {}) or {},
+        crank_seconds=float((raw.get("generator") or {}).get("crank_seconds", 2.5)),
+        stop_seconds=float((raw.get("generator") or {}).get("stop_seconds", 3.0)),
         state_dir=Path(raw.get("state_dir", ".state")),
     )
 

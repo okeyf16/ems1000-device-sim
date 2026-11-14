@@ -3,8 +3,8 @@
 A Python virtual **EMS-1000** generator controller that replaces the Wokwi ESP32 simulation (`wokwi-proj-09`).
 It connects to Azure IoT Hub over MQTT (TLS, port 8883) and sends the same telemetry the firmware sends.
 
-**Status: M1.** It connects, sends a 60-second heartbeat in the firmware's schema v1, and has a daily message budget guard.
-Start/stop commands (M2), realistic readings and faults (M3), and tests/CI (M4) come next. The full plan is in the project doc `claude/ems-device-sim-plan.md`.
+**Status: M2.** Heartbeat telemetry (M1), plus the generator state machine and direct-method commands (M2).
+Realistic readings and fault triggers (M3) and tests/CI polish (M4) come next. The plan is in the project doc `claude/ems-device-sim-plan.md`.
 
 ## Quick start in GitHub Codespaces
 
@@ -52,10 +52,40 @@ python cli.py budget              # messages used today (UTC)
 
 In M1 the generator is always **OFF** (`run=0`, v/i/f = 0, battery resting, engine at ambient temperature).
 
+## Commands (M2)
+
+The sim listens for IoT Hub direct methods while `python cli.py run` is running:
+
+| Method (alias) | Effect | Replies |
+|---|---|---|
+| `remote_start` (`start`) | Off -> Crank (2.5 s) -> Run | 200 accepted · 400 already running/stopping · 409 safety check failed or fault lockout |
+| `remote_stop` (`stop`) | Crank/Run -> Stop (3 s) -> Off | 200 accepted (also when already off: `note: already off`) |
+| `reset_fault` | Fault -> Off if the condition has cleared | 200 cleared · 409 condition still present · 200 `no_fault` |
+| `get_status` | Current state + readings, no telemetry message used | 200 |
+| anything else | | 404 `unknown_method` |
+
+Replies go back immediately; crank and stop finish in the background. Every state change
+sends one extra telemetry message (`run`: 0 Off, 1 Crank, 2 Run, 3 Stop, 4 Fault).
+Each reply echoes `cmd_id` (the API's `command_id`, or IoT Hub's request id).
+
+While running, readings are basic and steady (~230 V, ~50 Hz, 8 A load, 65 °C, battery 13.8 V
+charging; 10.6 V during crank). The pre-start interlock refuses on low oil or fuel below 5 %,
+like the firmware.
+
+Try it (sim running in one terminal):
+```bash
+# through the staging API (app path)
+curl -s -X POST https://app-ems1000-stg-4s1y.azurewebsites.net/api/devices/ems-sim-01/command \
+  -H 'Content-Type: application/json' -d '{"command":"start"}'
+# or straight at IoT Hub
+az iot hub invoke-device-method --hub-name iot-ems1000-stg --device-id ems-sim-01 \
+  --method-name remote_start --method-payload '{}'
+```
+
 ## Free-tier budget
 
 IoT Hub F1 allows **8,000 messages per UTC day for the whole hub**, and direct-method calls count too.
-The simulator counts its own messages in `.state/budget.json` (the count survives restarts and resets at 00:00 UTC) and stops sending at `budget.stop_at` (7,500 by default).
+Direct-method calls count too. The simulator counts its own telemetry and every command it receives in `.state/budget.json` (the count survives restarts and resets at 00:00 UTC) and stops sending at `budget.stop_at` (7,500 by default).
 One device at 60 s uses 1,440 messages a day.
 
 ## Several devices
@@ -70,7 +100,9 @@ config/default.yaml   device ids, cadence, budget, sensor baseline
 sim/config.py         YAML + .env loading
 sim/transport.py      IoT Hub connection (azure-iot-device), behind an interface so paho-mqtt can replace it later
 sim/telemetry.py      payload builder + contract validation + traceparent
-sim/sensors.py        sensor model (M1: OFF baseline)
+sim/sensors.py        sensor model (M2: basic per-state values) + pre-start safety check
+sim/state_machine.py  Off/Crank/Run/Stop/Fault with background timers
+sim/commands.py       direct-method names, aliases and replies
 sim/budget.py         daily message guard
 sim/persist.py        boot counter / state files
 sim/device.py         heartbeat loop
