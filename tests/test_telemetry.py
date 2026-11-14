@@ -4,7 +4,8 @@ import re
 
 import pytest
 
-from sim.sensors import SensorModel, SensorReading
+from sim.physics import GeneratorModel
+from sim.sensors import SensorReading
 from sim.telemetry import SCHEMA_V1, PayloadError, build_payload, new_traceparent, validate
 
 FIRMWARE_FIELD_ORDER = ["sv", "id", "ts", "boot", "seq", "v", "i", "f", "fuel",
@@ -72,8 +73,8 @@ def test_traceparent_format():
 
 
 def test_off_state_sensor_baseline():
-    model = SensorModel({"ambient_temp_c": 28, "battery_rest_v": 12.6,
-                         "fuel_start_pct": 85}, rng=random.Random(1))
+    model = GeneratorModel({"ambient_temp_c": 28, "battery_rest_v": 12.6,
+                            "fuel_start_pct": 85}, rng=random.Random(1))
     for _ in range(200):
         r = model.read()
         assert (r.v, r.i, r.f) == (0.0, 0.0, 0.0)

@@ -10,38 +10,7 @@ from sim.device import VirtualDevice
 from sim.state_machine import FAULT_LOW_OIL, Generator, RunState
 from sim.transport import DryRunTransport
 
-
-class FakeTimers:
-    """Deterministic stand-in for threading.Timer: fire() runs the pending callback."""
-
-    def __init__(self):
-        self.pending = []
-
-    def __call__(self, seconds, fn):
-        timers = self
-
-        class _T:
-            daemon = False
-            cancelled = False
-
-            def __init__(self):
-                self.seconds, self.fn = seconds, fn
-
-            def start(self):
-                timers.pending.append(self)
-
-            def cancel(self):
-                self.cancelled = True
-
-        return _T()
-
-    def fire(self):
-        live = [t for t in self.pending if not t.cancelled]
-        assert live, "no pending timer"
-        t = live[-1]
-        self.pending.remove(t)
-        t.fn()
-        return t.seconds
+from fakes import FakeTimers
 
 
 def make_gen(safe=(True, "", 0)):
@@ -172,7 +141,8 @@ def test_commands_over_transport_send_on_change_telemetry(tmp_path):
     runs = [json.loads(b)["run"] for b, _ in transport.sent]
     assert runs == [1, 2]                         # crank, run: one message per change
     running = json.loads(transport.sent[-1][0])
-    assert running["v"] == 230.0 and running["f"] == 50.0 and running["vb"] == 13.8
+    # ECO4990ES at the default 25 % load: 220 V - 6 x 0.25, governor 51.5 - 1.5 x 0.25
+    assert running["v"] == 218.5 and running["f"] == 51.12 and running["i"] == 3.41
     cranking = json.loads(transport.sent[0][0])
     assert cranking["vb"] == 10.6 and cranking["v"] == 0.0
     transport.invoke("stop"); timers.fire()

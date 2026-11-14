@@ -16,20 +16,44 @@ generator:
   crank_seconds: 2.5    # firmware start-relay pulse
   stop_seconds: 3.0     # firmware stop-relay pulse
 
+simulation:
+  tick_seconds: 1.0     # model step, real seconds
+  speed: 1.0            # simulated seconds per real second (--speed in PR 2)
+
+# Physics-lite model of a Sumec Firman ECO4990ES (sim/physics.py)
 sensors:
-  # parked (OFF / STOP / FAULT)
+  # nameplate
+  rated_kva: 3.0
+  max_kva: 3.2
+  nominal_v: 220.0
+  tank_l: 15.0
+  # starting conditions
+  fuel_start_pct: 85.0
+  oil_start: 0                  # 0 OK, 1 low (warning), 2 critical (fault)
+  load_pct: 25.0                # of rated (3.0 kVA ~ 13.6 A at 220 V)
   ambient_temp_c: 28.0
   battery_rest_v: 12.6
-  fuel_start_pct: 85.0
   rssi_start_dbm: -68
-  # basic running values (M2); M3 makes them evolve
-  run_voltage_v: 230.0
-  run_frequency_hz: 50.0
-  run_load_a: 8.0
-  run_temp_c: 65.0
+  # fuel (estimate calibrated to 12 h at 50 % on 15 L)
+  fuel_l_per_h_base: 0.55
+  fuel_l_per_h_per_load: 1.40
+  # thermal (estimate)
+  heat_tau_s: 480
+  cool_tau_s: 900
+  overtemp_c: 95.0              # fault while running
+  restart_temp_c: 80.0          # interlock: too hot to start above this
+  # battery
   charging_v: 13.8
-  crank_battery_v: 10.6
-  low_fuel_pct: 5.0     # pre-start interlock threshold (firmware: empty tank)
-  noise: true           # small random jitter on analogue readings
+  crank_drop_v: 2.0
+  min_start_battery_v: 11.0
+  weak_battery_v: 10.8          # rest voltage when "weak battery" is injected
+  # thresholds
+  low_fuel_warn_pct: 10.0       # requirements: fuel < 10 % warning
+  low_fuel_interlock_pct: 5.0   # firmware: refuse start on empty tank
+  overload_trip_s: 5.0          # above max_kva this long -> output breaker trips
+  voltage_tolerance_pct: 5.0
+  frequency_low_hz: 49.5
+  frequency_high_hz: 52.0
+  noise: true                   # small random jitter on readings
 
 state_dir: .state       # persisted boot counter + daily message count

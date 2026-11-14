@@ -23,6 +23,8 @@ class SimConfig:
     sensors: dict = field(default_factory=dict)
     crank_seconds: float = 2.5
     stop_seconds: float = 3.0
+    tick_seconds: float = 1.0      # real seconds between model steps
+    speed: float = 1.0             # simulated seconds per real second (--speed, PR 2)
     state_dir: Path = Path(".state")
 
 
@@ -47,6 +49,8 @@ def load_config(path: str | Path | None = None) -> SimConfig:
         sensors=raw.get("sensors", {}) or {},
         crank_seconds=float((raw.get("generator") or {}).get("crank_seconds", 2.5)),
         stop_seconds=float((raw.get("generator") or {}).get("stop_seconds", 3.0)),
+        tick_seconds=float((raw.get("simulation") or {}).get("tick_seconds", 1.0)),
+        speed=float((raw.get("simulation") or {}).get("speed", 1.0)),
         state_dir=Path(raw.get("state_dir", ".state")),
     )
 
