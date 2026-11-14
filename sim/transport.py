@@ -13,6 +13,8 @@ from typing import Any
 
 # (method_name, payload, request_id) -> (status, response_body)
 MethodHandler = Callable[[str, Any, str], tuple[int, dict]]
+# desired-properties patch -> None (device twin, M5)
+DesiredHandler = Callable[[dict], None]
 
 log = logging.getLogger(__name__)
 
@@ -30,6 +32,19 @@ class Transport(ABC):
     @abstractmethod
     def set_method_handler(self, handler: MethodHandler) -> None:
         """Register the direct-method handler. Call before connect()."""
+
+    # ---- device twin (M5) ----------------------------------------------------------
+    @abstractmethod
+    def set_desired_handler(self, handler: DesiredHandler) -> None:
+        """Register the handler for desired-property patches. Call before connect()."""
+
+    @abstractmethod
+    def get_twin(self) -> dict:
+        """Full twin: {"desired": {...,"$version": n}, "reported": {...}}."""
+
+    @abstractmethod
+    def patch_reported(self, patch: dict) -> None:
+        """Merge-update reported properties (None values delete keys)."""
 
 
 class AzureSdkTransport(Transport):
@@ -66,6 +81,21 @@ class AzureSdkTransport(Transport):
 
         self._client.on_method_request_received = _on_method
 
+    def set_desired_handler(self, handler: DesiredHandler) -> None:
+        def _on_patch(patch) -> None:
+            try:
+                handler(patch)
+            except Exception:  # noqa: BLE001 - keep the SDK's handler thread alive
+                log.exception("[%s] desired-properties patch failed", self.device_id)
+
+        self._client.on_twin_desired_properties_patch_received = _on_patch
+
+    def get_twin(self) -> dict:
+        return self._client.get_twin()
+
+    def patch_reported(self, patch: dict) -> None:
+        self._client.patch_twin_reported_properties(patch)
+
     def connect(self) -> None:
         self._client.connect()
 
@@ -90,6 +120,10 @@ class DryRunTransport(Transport):
         self.device_id = device_id
         self.sent: list[tuple[str, str]] = []
         self._handler: MethodHandler | None = None
+        self._desired_handler: DesiredHandler | None = None
+        self.desired: dict = {"$version": 1}
+        self.reported: dict = {}
+        self.reported_patches: list[dict] = []
 
     def connect(self) -> None:
         log.info("[%s] DRY RUN - not connecting to IoT Hub", self.device_id)
@@ -103,8 +137,37 @@ class DryRunTransport(Transport):
     def set_method_handler(self, handler: MethodHandler) -> None:
         self._handler = handler
 
+    def set_desired_handler(self, handler: DesiredHandler) -> None:
+        self._desired_handler = handler
+
+    def get_twin(self) -> dict:
+        return {"desired": dict(self.desired), "reported": dict(self.reported)}
+
+    def patch_reported(self, patch: dict) -> None:
+        self.reported_patches.append(patch)
+        _merge(self.reported, patch)
+        log.info("[%s] DRY RUN twin reported: %s", self.device_id, patch)
+
+    def update_desired(self, patch: dict) -> None:
+        """Test hook: change desired properties as the portal/API would."""
+        _merge(self.desired, patch)
+        self.desired["$version"] = self.desired.get("$version", 1) + 1
+        if self._desired_handler:
+            self._desired_handler({**patch, "$version": self.desired["$version"]})
+
     def invoke(self, method_name: str, payload: Any = None, request_id: str = "dry-run") -> tuple[int, dict]:
         """Test hook: deliver a direct method as IoT Hub would."""
         if self._handler is None:
             raise RuntimeError("no method handler registered")
         return self._handler(method_name, payload, request_id)
+
+
+def _merge(target: dict, patch: dict) -> None:
+    """JSON merge-patch, as IoT Hub applies twin patches (None deletes)."""
+    for key, value in patch.items():
+        if value is None:
+            target.pop(key, None)
+        elif isinstance(value, dict) and isinstance(target.get(key), dict):
+            _merge(target[key], value)
+        else:
+            target[key] = value

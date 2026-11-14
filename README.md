@@ -3,7 +3,7 @@
 A Python virtual **EMS-1000** generator controller that replaces the Wokwi ESP32 simulation (`wokwi-proj-09`).
 It connects to Azure IoT Hub over MQTT (TLS, port 8883) and sends the same telemetry the firmware sends.
 
-**Status: M4.** Heartbeat telemetry (M1), state machine + direct-method commands (M2), a physics-lite model of the **Sumec Firman ECO4990ES** with automatic faults, keyboard shortcuts, YAML scenarios and `--speed` (M3), CI, a Docker image and test/troubleshooting guides (M4).
+**Status: M5.** Heartbeat telemetry (M1), state machine + direct-method commands (M2), a physics-lite model of the **Sumec Firman ECO4990ES** with automatic faults, keyboard shortcuts, YAML scenarios and `--speed` (M3), CI, a Docker image and test/troubleshooting guides (M4), device twin with remote settings (M5).
 
 [![CI](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml)
 
@@ -191,6 +191,38 @@ When it finishes the sim keeps running until Ctrl+C.
 `--headless` turns the keyboard off, for runs with no terminal (a container or CI job, M4):
 `python cli.py run --headless --scenario out-of-fuel`.
 
+## Device twin (M5)
+
+The sim keeps its IoT Hub **device twin** up to date and accepts settings through it.
+
+**Reported** (at start-up, on every state or fault change, and when settings are applied; never periodically):
+
+| Property | Example |
+|---|---|
+| `device` | `{"model": "Sumec Firman ECO4990ES", "sim_version": "0.5.0", "boot": 12, "started_at": "…Z"}` |
+| `state`, `run`, `flt` | `"RUNNING"`, `2`, `0` |
+| `last_fault` | `{"bits": 2, "reason": "Out of fuel: engine stalled", "at": "…Z"}`, kept after the reset |
+| `settings` | the values in use |
+| `settings_status` | per desired setting: `{"status": "applied" \| "rejected", "reason": …, "desired_version": n}` |
+
+**Desired settings** (portal: IoT Hub → Devices → `ems-sim-01` → **Device twin**; or the staging API `PATCH /api/devices/{id}/twin`):
+
+| Setting | Range | Effect |
+|---|---|---|
+| `telemetry_interval_s` | 10–3600 (whole) | heartbeat interval, applied straight away |
+| `load_pct` | 0–150 | generator load (like `+`/`-`) |
+| `low_fuel_warn_pct` | 1–50 | low-fuel warning threshold (default 10) |
+| `overtemp_c` | 85–120 | over-temperature trip (default 95) |
+| `min_start_battery_v` | 10.0–12.5 | start interlock (default 11.0) |
+| `speed` | 1–3600 | model speed (like `--speed`) |
+
+- A bad value is rejected with a reason in `settings_status`; the rest of the same change still applies.
+- `null` clears a setting: the sim goes back to its config value.
+- **Desired settings persist in IoT Hub and override `config/default.yaml` at start-up** (logged as
+  "overrides config"). Changes made while the sim is offline apply when it connects.
+- Keys and the twin can both change load and speed: the last change wins, and `settings` shows what's in use.
+- Each twin update counts as one message in the daily budget (a few dozen a day).
+
 ## Docker
 
 The image runs the simulator headless (no keyboard). Secrets are passed in at run time, never
@@ -214,7 +246,7 @@ Not deployed anywhere yet; Azure Container Apps is the planned home for 24/7 run
 ```bash
 pip install -r requirements-dev.txt
 ruff check .        # lint (config in pyproject.toml)
-pytest -q           # 80 tests, ~10 s
+pytest -q           # 109 tests, ~13 s
 ```
 
 The same checks run in GitHub Actions on every pull request and push to `main` (`.github/workflows/ci.yml`).
@@ -242,6 +274,7 @@ sim/sensors.py        one set of readings (telemetry units)
 sim/controls.py       local actions + keyboard shortcut map (M3)
 sim/keyboard.py       single-key input in the terminal (M3)
 sim/scenario.py       YAML scenario loader and player (M3)
+sim/twin.py           device twin: reported properties, desired settings (M5)
 config/scenarios/     scenario files (M3)
 docs/                 live test guide, troubleshooting (M4)
 Dockerfile            headless container image (M4)
