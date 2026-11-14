@@ -205,7 +205,7 @@ The sim keeps its IoT Hub **device twin** up to date and accepts settings throug
 | `settings` | the values in use |
 | `settings_status` | per desired setting: `{"status": "applied" \| "rejected", "reason": …, "desired_version": n}` |
 
-**Desired settings** (portal: IoT Hub → Devices → `ems-sim-01` → **Device twin**; or the staging API `PATCH /api/devices/{id}/twin`):
+**Desired settings** (portal: IoT Hub → Devices → `ems-sim-01` → **Device twin**; or the staging API `PATCH /api/devices/{id}/twin`, and `DELETE /api/devices/{id}/twin/settings` to clear):
 
 | Setting | Range | Effect |
 |---|---|---|
@@ -217,7 +217,7 @@ The sim keeps its IoT Hub **device twin** up to date and accepts settings throug
 | `speed` | 1–3600 | model speed (like `--speed`) |
 
 - A bad value is rejected with a reason in `settings_status`; the rest of the same change still applies.
-- `null` clears a setting: the sim goes back to its config value.
+- `null` clears a setting: the sim goes back to its config value. Through the API: `DELETE /api/devices/{id}/twin/settings` clears all six (or `?name=load_pct` for one).
 - **Desired settings persist in IoT Hub and override `config/default.yaml` at start-up** (logged as
   "overrides config"). Changes made while the sim is offline apply when it connects.
 - Keys and the twin can both change load and speed: the last change wins, and `settings` shows what's in use.

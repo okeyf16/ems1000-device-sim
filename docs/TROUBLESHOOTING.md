@@ -40,7 +40,7 @@ Where to look in Application Insights: Function App → **Application Insights**
 
 | Symptom | Likely cause | Fix |
 |---|---|---|
-| Sim starts with an unexpected load/interval/speed | A desired setting stored in the twin overrides the config (start-up log says "overrides config") | PATCH the setting to `null` (or the "Clear settings" example), or edit the twin in the portal |
+| Sim starts with an unexpected load/interval/speed | A desired setting stored in the twin overrides the config (start-up log says "overrides config") | `/docs` → **DELETE …/twin/settings** (all, or `name=load_pct` for one), or remove it from `desired` in the portal Device twin |
 | PATCH returns 200 but nothing changes | The sim is offline (applies on next connect) or rejected the value | GET …/twin: check `connection_state` and `reported.settings_status` |
 | `settings_status` says rejected | Out of range or unknown name (only possible via the portal; the API checks first) | Fix the value; ranges are in the README |
 | Reported properties stale | Twin updates are skipped once the daily budget is reached | `python cli.py budget`; wait for 00:00 UTC |

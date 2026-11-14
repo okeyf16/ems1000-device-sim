@@ -95,7 +95,7 @@ Start the sim first: `python cli.py run`.
 | M5-05 | Stop the sim (Ctrl+C). PATCH `{"load_pct": 60}`. Start the sim | Start-up log `twin: load_pct = 60.0 (overrides config)`; `reported.settings.load_pct` 60 |
 | M5-06 | Press `e` then `s` in the sim (start with empty tank), then GET …/twin. Press `F`, then POST `reset_fault` | `reported.state` "FAULT", `last_fault.reason` "Fuel Level Below Threshold"; after the reset state "OFF" and `last_fault` still there |
 
-Afterwards: PATCH example "Clear settings" so the sim goes back to its config values.
+Afterwards: `/docs` → **DELETE /api/devices/{device_id}/twin/settings** → Try it out → `ems-sim-01`, leave `name` empty → Execute. All six settings are cleared and the sim goes back to its config values (the sim logs `cleared, back to config value` for each). Pass: 200 with `cleared` listing the six settings.
 
 ## M4: CI and container
 
