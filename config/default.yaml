@@ -18,7 +18,7 @@ generator:
 
 simulation:
   tick_seconds: 1.0     # model step, real seconds
-  speed: 1.0            # simulated seconds per real second (--speed in PR 2)
+  speed: 1.0            # engine seconds per real second; --speed overrides (heartbeat stays real)
 
 # Physics-lite model of a Sumec Firman ECO4990ES (sim/physics.py)
 sensors:

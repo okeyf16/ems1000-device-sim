@@ -3,8 +3,7 @@
 A Python virtual **EMS-1000** generator controller that replaces the Wokwi ESP32 simulation (`wokwi-proj-09`).
 It connects to Azure IoT Hub over MQTT (TLS, port 8883) and sends the same telemetry the firmware sends.
 
-**Status: M3 (part 1).** Heartbeat telemetry (M1), state machine + direct-method commands (M2), and a physics-lite model of the **Sumec Firman ECO4990ES** with automatic faults (M3 part 1).
-Hotkeys, YAML scenarios and `--speed` follow in M3 part 2. Plan: project doc *EMS1000 Simulator – M3 Plan*.
+**Status: M3.** Heartbeat telemetry (M1), state machine + direct-method commands (M2), a physics-lite model of the **Sumec Firman ECO4990ES** with automatic faults, keyboard shortcuts, YAML scenarios and `--speed` (M3). Plan: project doc *EMS1000 Simulator – M3 Plan*.
 
 ## Quick start in GitHub Codespaces
 
@@ -111,14 +110,46 @@ The model steps once per second (`simulation.tick_seconds`); parameters live und
 Start interlock (start and `reset_fault`): refuses on oil critical, fuel < 5 %, engine > 80 °C,
 or battery < 11 V. Oil low (1) only warns. `reset_fault` succeeds once the condition has gone.
 
-Until hotkeys and scenarios arrive (M3 part 2), try faults by editing the start values in
-`config/default.yaml` and restarting the sim:
+## Keyboard shortcuts (M3)
 
-| Set | Then | Expect |
-|---|---|---|
-| `fuel_start_pct: 9` | run | one low-fuel warning message |
-| `oil_start: 2` | `start` | 409 "Low Oil Level Warning", `run` 4 |
-| `load_pct: 110` | `start` | after ~5 s: `v` and `i` 0, `flt` 48 (bits 4+5), still `run` 2 |
+While `python cli.py run` is running in a terminal, single keys (no Enter) act on the
+generator directly, like someone standing at it. They use no IoT Hub messages.
+
+| Key | Action | Key | Action |
+|---|---|---|---|
+| `s` | start | `h` | overheat on/off (cooling failure) |
+| `x` | stop | `b` | weak battery on/off |
+| `r` | reset fault | `p` | reset breaker (refused while overloaded) |
+| `+` / `-` | load ±10 % | `t` | send telemetry now |
+| `o` | oil OK → low → critical | `i` | show status |
+| `f` | fuel 9 % (warning) | `?` | list the keys |
+| `e` | fuel empty | Ctrl+C | quit |
+| `F` | refuel to 100 % | | |
+
+With several devices configured, the keys (and scenarios) drive the first one.
+
+## Speed and scenarios (M3)
+
+`--speed N` runs the generator model N times faster: `--speed 60` makes 1 real minute one
+engine hour, so a full tank at 50 % load empties in 12 minutes instead of 12 hours. Only the
+physics speeds up (fuel, temperature, battery). The heartbeat (`--interval`), commands and
+the 2.5 s crank / 3 s stop stay in real time, so the message budget is unaffected. Maximum 3600.
+
+A scenario plays a scripted fault timeline (see `config/scenarios/`):
+
+```bash
+python cli.py scenarios                                   # list them
+python cli.py run --interval 10 --scenario overload       # breaker trip, ~1.5 min
+python cli.py run --interval 10 --scenario out-of-fuel    # stall + refuel, ~3 min (speed 60)
+python cli.py run --interval 10 --scenario overheat       # trip + cool-down, ~1 min
+python cli.py run --interval 10 --scenario normal-day     # load profile, ~2.5 min
+```
+
+Each scenario sets its own speed; `--speed` overrides it. Keys still work during a scenario.
+When it finishes the sim keeps running until Ctrl+C.
+
+`--headless` turns the keyboard off, for runs with no terminal (a container or CI job, M4):
+`python cli.py run --headless --scenario out-of-fuel`.
 
 ## Free-tier budget
 
@@ -140,6 +171,10 @@ sim/transport.py      IoT Hub connection (azure-iot-device), behind an interface
 sim/telemetry.py      payload builder + contract validation + traceparent
 sim/physics.py        ECO4990ES physics-lite model, automatic faults, interlock (M3)
 sim/sensors.py        one set of readings (telemetry units)
+sim/controls.py       local actions + keyboard shortcut map (M3)
+sim/keyboard.py       single-key input in the terminal (M3)
+sim/scenario.py       YAML scenario loader and player (M3)
+config/scenarios/     scenario files (M3)
 sim/state_machine.py  Off/Crank/Run/Stop/Fault with background timers
 sim/commands.py       direct-method names, aliases and replies
 sim/budget.py         daily message guard

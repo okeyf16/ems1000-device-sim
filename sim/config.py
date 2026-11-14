@@ -24,7 +24,7 @@ class SimConfig:
     crank_seconds: float = 2.5
     stop_seconds: float = 3.0
     tick_seconds: float = 1.0      # real seconds between model steps
-    speed: float = 1.0             # simulated seconds per real second (--speed, PR 2)
+    speed: float = 1.0             # simulated seconds per real second (--speed)
     state_dir: Path = Path(".state")
 
 

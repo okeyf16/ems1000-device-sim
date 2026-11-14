@@ -1,0 +1,26 @@
+name: out-of-fuel
+description: Run at 50 % until the tank is empty, then refuel, reset and restart
+speed: 60            # about 2.5 min until the stall
+setup:
+  fuel_start_pct: 20 # 3 L: about 2.4 h at 50 % load
+  load_pct: 50
+steps:
+  - say: "Out of fuel: low-fuel warning below 10 %, stall at 0 %"
+  - do: start
+  - until: {state: RUNNING}
+    timeout: 60
+  - until: {fuel_below: 10}
+  - say: "Low-fuel warning sent; still running"
+  - until: {state: FAULT}
+  - say: "Stalled: Fault, flt bit 1"
+  - wait: 600
+  - do: reset_fault          # refused: tank still empty
+  - do: refuel
+  - do: reset_fault          # 200 cleared
+  - do: start
+  - until: {state: RUNNING}
+    timeout: 60
+  - wait: 1800
+  - do: stop
+  - until: {state: OFF}
+    timeout: 60

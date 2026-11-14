@@ -35,6 +35,7 @@ class VirtualDevice:
         self.stop_event = stop_event
         self.interval = interval if interval is not None else cfg.heartbeat_seconds
         self.model = GeneratorModel(cfg.sensors)
+        self.speed = cfg.speed        # model seconds per real second (--speed)
         self.boot = next_boot_count(cfg.state_dir, device_id)
         self.seq = 0
         self._send_lock = threading.Lock()  # heartbeat, timers and commands run on different threads
@@ -89,7 +90,7 @@ class VirtualDevice:
         step = self.cfg.tick_seconds
         while not self.stop_event.wait(step):
             try:
-                self.tick(step * self.cfg.speed)
+                self.tick(step * self.speed)
             except Exception:  # noqa: BLE001 - keep the device alive
                 log.exception("[%s] model tick failed", self.device_id)
 
@@ -119,8 +120,8 @@ class VirtualDevice:
             return True
 
     def run(self, max_messages: int | None = None) -> None:
-        log.info("[%s] boot #%d, heartbeat every %ss, listening for commands",
-                 self.device_id, self.boot, self.interval)
+        log.info("[%s] boot #%d, heartbeat every %ss, model speed %gx, listening for commands",
+                 self.device_id, self.boot, self.interval, self.speed)
         self.transport.connect()
         threading.Thread(target=self._ticker, name=f"{self.device_id}-model", daemon=True).start()
         try:

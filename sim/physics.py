@@ -207,7 +207,7 @@ class GeneratorModel:
                 return False, f"Starter battery too low ({rest:.1f} V)", FAULT_LOW_BATTERY
             return True, "", 0
 
-    # ---- triggers (used by tests now, hotkeys and scenarios in PR 2) ---------------
+    # ---- triggers (keyboard shortcuts, scenarios, tests) ------------------------------
     def set_load_pct(self, pct: float) -> None:
         with self._lock:
             self.load = max(0.0, pct / 100)

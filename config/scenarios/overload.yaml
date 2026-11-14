@@ -1,0 +1,27 @@
+name: overload
+description: Load goes to 110 %, breaker trips after 5 s, load reduced, breaker reset
+speed: 1             # real time: the 5 s trip delay is worth watching
+steps:
+  - say: "Overload: above 3.2 kVA for 5 s trips the output breaker"
+  - do: start
+  - until: {state: RUNNING}
+    timeout: 60
+  - wait: 15
+  - do: load
+    value: 104       # above rated, below max: alert bits only
+  - wait: 15
+  - do: load
+    value: 110
+  - until: {breaker: tripped}
+    timeout: 30
+  - say: "Breaker tripped: v and i are 0, flt 48, engine still RUNNING"
+  - wait: 10
+  - do: reset_breaker        # refused: still overloaded
+  - do: load
+    value: 50
+  - wait: 5
+  - do: reset_breaker        # works now
+  - wait: 20
+  - do: stop
+  - until: {state: OFF}
+    timeout: 60
