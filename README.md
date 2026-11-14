@@ -3,7 +3,47 @@
 A Python virtual **EMS-1000** generator controller that replaces the Wokwi ESP32 simulation (`wokwi-proj-09`).
 It connects to Azure IoT Hub over MQTT (TLS, port 8883) and sends the same telemetry the firmware sends.
 
-**Status: M3.** Heartbeat telemetry (M1), state machine + direct-method commands (M2), a physics-lite model of the **Sumec Firman ECO4990ES** with automatic faults, keyboard shortcuts, YAML scenarios and `--speed` (M3). Plan: project doc *EMS1000 Simulator – M3 Plan*.
+**Status: M4.** Heartbeat telemetry (M1), state machine + direct-method commands (M2), a physics-lite model of the **Sumec Firman ECO4990ES** with automatic faults, keyboard shortcuts, YAML scenarios and `--speed` (M3), CI, a Docker image and test/troubleshooting guides (M4).
+
+[![CI](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml)
+
+Guides: [live tests](docs/TESTING.md) · [troubleshooting](docs/TROUBLESHOOTING.md)
+
+## How it fits together
+
+```mermaid
+flowchart LR
+    subgraph dev["Simulator (Codespace or container)"]
+        SIM["ems1000-device-sim<br/>ems-sim-01"]
+    end
+    subgraph azure["Azure staging (repo ems1000-staging, Terraform)"]
+        HUB["IoT Hub<br/>iot-ems1000-stg (F1)"]
+        ROUTE{{"route<br/>telemetry-to-builtin"}}
+        ARCH[("Blob archive<br/>telemetry-archive")]
+        FN["Function App<br/>telemetry_ingest<br/>history_purge (daily)"]
+        STATE[("Table DeviceState<br/>latest per device")]
+        HIST[("Table DeviceTelemetry<br/>history, 9 days")]
+        API["App Service API<br/>/state /telemetry<br/>/command /live"]
+    end
+    APP["Mobile app<br/>iotgenmobile"]
+
+    SIM -- "telemetry (MQTT, 60 s + on change)" --> HUB
+    HUB --> ROUTE
+    ROUTE -- built-in endpoint --> FN
+    ROUTE -- raw copy --> ARCH
+    FN --> STATE
+    FN --> HIST
+    STATE --> API
+    HIST --> API
+    API --> APP
+    APP -. "start / stop / reset_fault / get_status" .-> API
+    API -. "direct method (remote_start …)" .-> HUB
+    HUB -. "direct method, reply 200/400/409" .-> SIM
+```
+
+Solid arrows: telemetry going up. Dotted arrows: commands coming back down. A command's reply comes
+straight back along the same path (the API mirrors the device's status code), while the resulting
+state change arrives a moment later as a normal telemetry message.
 
 ## Quick start in GitHub Codespaces
 
@@ -151,6 +191,34 @@ When it finishes the sim keeps running until Ctrl+C.
 `--headless` turns the keyboard off, for runs with no terminal (a container or CI job, M4):
 `python cli.py run --headless --scenario out-of-fuel`.
 
+## Docker
+
+The image runs the simulator headless (no keyboard). Secrets are passed in at run time, never
+built into the image. CI builds the image and runs a dry-run smoke test on every PR.
+
+```bash
+docker build -t ems1000-device-sim .
+docker run --rm ems1000-device-sim --dry-run --interval 2 --count 3          # offline check
+docker run --rm -e IOTHUB_DEVICE_CONNECTION_STRING ems1000-device-sim       # live, 60 s heartbeat
+docker run --rm -e IOTHUB_DEVICE_CONNECTION_STRING ems1000-device-sim \
+    --interval 10 --scenario out-of-fuel                                      # live scenario
+```
+
+Anything after the image name is added to `python cli.py run --headless`. To keep the boot
+counter and daily message count across container restarts, mount a volume:
+`-v ems-sim-state:/app/.state`. The Codespace includes Docker (after a rebuild of the codespace).
+Not deployed anywhere yet; Azure Container Apps is the planned home for 24/7 runs.
+
+## Development checks
+
+```bash
+pip install -r requirements-dev.txt
+ruff check .        # lint (config in pyproject.toml)
+pytest -q           # 80 tests, ~10 s
+```
+
+The same checks run in GitHub Actions on every pull request and push to `main` (`.github/workflows/ci.yml`).
+
 ## Free-tier budget
 
 IoT Hub F1 allows **8,000 messages per UTC day for the whole hub**, and direct-method calls count too.
@@ -175,6 +243,9 @@ sim/controls.py       local actions + keyboard shortcut map (M3)
 sim/keyboard.py       single-key input in the terminal (M3)
 sim/scenario.py       YAML scenario loader and player (M3)
 config/scenarios/     scenario files (M3)
+docs/                 live test guide, troubleshooting (M4)
+Dockerfile            headless container image (M4)
+.github/workflows/    CI: ruff, pytest, Docker build + smoke test (M4)
 sim/state_machine.py  Off/Crank/Run/Stop/Fault with background timers
 sim/commands.py       direct-method names, aliases and replies
 sim/budget.py         daily message guard

@@ -8,8 +8,18 @@ import pytest
 from fakes import FakeTimers
 from sim.config import SimConfig
 from sim.device import VirtualDevice
-from sim.physics import (ALERT_FREQUENCY, ALERT_VOLTAGE, CRANK, FAULT_LOW_BATTERY, FAULT_LOW_FUEL,
-                         FAULT_LOW_OIL, FAULT_OVER_TEMP, OFF, RUN, GeneratorModel)
+from sim.physics import (
+    ALERT_FREQUENCY,
+    ALERT_VOLTAGE,
+    CRANK,
+    FAULT_LOW_BATTERY,
+    FAULT_LOW_FUEL,
+    FAULT_LOW_OIL,
+    FAULT_OVER_TEMP,
+    OFF,
+    RUN,
+    GeneratorModel,
+)
 from sim.state_machine import RunState
 from sim.transport import DryRunTransport
 

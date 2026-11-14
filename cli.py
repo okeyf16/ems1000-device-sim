@@ -28,7 +28,6 @@ from sim.keyboard import start_keyboard
 from sim.scenario import ScenarioRunner, available, load_scenario, start_scenario
 from sim.transport import AzureSdkTransport, DryRunTransport
 
-
 MAX_SPEED = 3600  # 1 engine hour per real second
 
 

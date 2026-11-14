@@ -8,7 +8,8 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 # (method_name, payload, request_id) -> (status, response_body)
 MethodHandler = Callable[[str, Any, str], tuple[int, dict]]

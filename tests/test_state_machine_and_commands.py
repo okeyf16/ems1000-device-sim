@@ -3,14 +3,13 @@ import threading
 
 import pytest
 
+from fakes import FakeTimers
 from sim.budget import BudgetGuard
 from sim.commands import CommandHandler
 from sim.config import SimConfig
 from sim.device import VirtualDevice
 from sim.state_machine import FAULT_LOW_OIL, Generator, RunState
 from sim.transport import DryRunTransport
-
-from fakes import FakeTimers
 
 
 def make_gen(safe=(True, "", 0)):
@@ -53,7 +52,8 @@ def test_safety_check_failure_locks_out_with_409():
 
 def test_stop_from_run_goes_through_stopping_to_off():
     gen, timers, _, _ = make_gen()
-    gen.start(); timers.fire()
+    gen.start()
+    timers.fire()
     status, body = gen.stop()
     assert (status, body["state"]) == (200, "STOPPING")
     assert timers.fire() == 3.0
@@ -95,7 +95,8 @@ def test_reset_fault_without_fault():
 
 def test_trip_while_running_kills_engine():
     gen, timers, _, _ = make_gen()
-    gen.start(); timers.fire()
+    gen.start()
+    timers.fire()
     gen.trip(4, "Over-temperature")
     assert gen.state == RunState.FAULT and gen.flt == 4
 
@@ -145,7 +146,8 @@ def test_commands_over_transport_send_on_change_telemetry(tmp_path):
     assert running["v"] == 218.5 and running["f"] == 51.12 and running["i"] == 3.41
     cranking = json.loads(transport.sent[0][0])
     assert cranking["vb"] == 10.6 and cranking["v"] == 0.0
-    transport.invoke("stop"); timers.fire()
+    transport.invoke("stop")
+    timers.fire()
     assert [json.loads(b)["run"] for b, _ in transport.sent][-2:] == [3, 0]
 
 
@@ -162,5 +164,6 @@ def test_commands_count_against_budget(tmp_path):
     budget = BudgetGuard(tmp_path, stop_at=7500, daily_limit=8000)
     dev, transport, timers = _device(tmp_path, budget)
     transport.invoke("get_status")                # 1 command, no telemetry
-    transport.invoke("start"); timers.fire()      # 1 command + 2 state messages
+    transport.invoke("start")
+    timers.fire()      # 1 command + 2 state messages
     assert budget.used == 4

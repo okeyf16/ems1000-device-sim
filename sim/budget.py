@@ -8,7 +8,7 @@ across all simulated devices and restarts, and refuses to send past `stop_at`.
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from .persist import StateFile
@@ -17,7 +17,7 @@ log = logging.getLogger(__name__)
 
 
 def _utc_day() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    return datetime.now(UTC).strftime("%Y-%m-%d")
 
 
 class BudgetGuard:
