@@ -1,0 +1,27 @@
+name: overheat
+description: Cooling fails, engine trips at 95 C, cools below 80 C, reset and restart
+speed: 60            # about 1 min
+steps:
+  - say: "Overheat: cooling failure while running"
+  - do: start
+  - until: {state: RUNNING}
+    timeout: 60
+  - wait: 300
+  - do: overheat
+    value: on
+  - until: {state: FAULT}
+    timeout: 7200
+  - say: "Tripped on over-temperature: Fault, flt bit 2 (value 4)"
+  - do: overheat
+    value: off
+  - do: reset_fault          # refused: still too hot
+  - until: {temp_below: 80}
+    timeout: 7200
+  - do: reset_fault          # 200 cleared
+  - do: start
+  - until: {state: RUNNING}
+    timeout: 60
+  - wait: 600
+  - do: stop
+  - until: {state: OFF}
+    timeout: 60

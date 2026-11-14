@@ -1,0 +1,22 @@
+name: normal-day
+description: Start, 2.5 h with changing load, stop
+speed: 60            # 1 real minute = 1 engine hour -> about 2.5 min
+steps:
+  - say: "Normal day: start, load changes, stop"
+  - do: start
+  - until: {state: RUNNING}
+    timeout: 60
+  - wait: 1800       # 30 min at the default 25 % load, engine warms up
+  - do: load
+    value: 50
+  - wait: 3600
+  - do: load
+    value: 75
+  - wait: 1800
+  - do: load
+    value: 25
+  - wait: 1800
+  - do: stop
+  - until: {state: OFF}
+    timeout: 60
+  - do: status
