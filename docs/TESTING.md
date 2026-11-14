@@ -97,6 +97,21 @@ Start the sim first: `python cli.py run`.
 
 Afterwards: `/docs` → **DELETE /api/devices/{device_id}/twin/settings** → Try it out → `ems-sim-01`, leave `name` empty → Execute. All six settings are cleared and the sim goes back to its config values (the sim logs `cleared, back to config value` for each). Pass: 200 with `cleared` listing the six settings.
 
+## M6: web control panel
+
+Run `python cli.py run --interval 10 --panel` and open port 8080 from the Codespaces notification or the
+**Ports** tab (*EMS panel* → globe icon). Check the port's visibility says **Private**.
+
+| ID | Steps | Pass when |
+|---|---|---|
+| M6-01 | Open the panel | Lamps show Off; six dials with coloured bands; "No faults or warnings"; the terminal shows no errors |
+| M6-02 | Click **Start**, then **Stop** | Lamps go Cranking → Running (dials move: ~218 V, ~51 Hz) → Stopping → Off; both actions listed under *Last actions* |
+| M6-03 | Start, drag **Load** to 110 % | After ~5 s: "Output breaker tripped", voltage and current dials drop to 0, lamp still Running. Drag back to 50 %, click **Reset breaker**: voltage returns |
+| M6-04 | Click **Empty the tank** while running | Fault lamp blinks; "Out of fuel: engine stalled". **Refuel**, **Reset fault**: lamp back to Off |
+| M6-05 | Pick **overheat**, click **Play** | Progress line steps through; temperature dial climbs into red, Fault, then cools; finishes "Scenario finished". **Stop** during a run stops it ("Scenario stopped") |
+| M6-06 | Leave it running a few minutes | *Last N minutes* charts fill in; running periods shaded, faults marked with a red line; reload the page: history is kept |
+| M6-07 | Look at *What Azure holds* | Last message a few seconds old, stored state matches, IoT Hub sees Connected, "Device and cloud agree" (a check may appear for a few seconds right after a change) |
+
 ## M4: CI and container
 
 | ID | Steps | Pass when |

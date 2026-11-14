@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EMS-1000 panel</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 16 16%22%3E%3Ccircle cx=%228%22 cy=%228%22 r=%227%22 fill=%22%232f7d4f%22/%3E%3C/svg%3E">
+<link rel="stylesheet" href="/style.css">
+<script src="/app.js" defer></script>
+</head>
+<body>
+<header class="plate">
+  <div class="plate-id">
+    <h1>EMS-1000 <span class="thin">simulator</span></h1>
+    <p id="device-line">Connecting…</p>
+  </div>
+  <ol class="annunciator" id="lamps" aria-label="Generator state">
+    <li data-state="OFF">Off</li>
+    <li data-state="CRANKING">Cranking</li>
+    <li data-state="RUNNING">Running</li>
+    <li data-state="STOPPING">Stopping</li>
+    <li data-state="FAULT" class="fault">Fault</li>
+  </ol>
+</header>
+
+<div id="offline" class="offline" hidden>The panel can't reach the simulator. Is <code>python cli.py run --panel</code> still running?</div>
+
+<main class="layout">
+  <section class="instruments" aria-label="Readings">
+    <div class="dials" id="dials"></div>
+    <div class="status-strip">
+      <div class="faults" id="faults" aria-live="polite"></div>
+      <dl class="facts" id="facts"></dl>
+    </div>
+  </section>
+
+  <section class="controls" aria-label="Controls">
+    <h2>Engine</h2>
+    <div class="btn-row">
+      <button class="btn go" data-action="start">Start</button>
+      <button class="btn stop" data-action="stop">Stop</button>
+      <button class="btn" data-action="reset_fault">Reset fault</button>
+    </div>
+
+    <h2><label for="load">Load <output id="load-out">–</output></label></h2>
+    <input type="range" id="load" min="0" max="150" step="5" value="25" aria-describedby="load-hint">
+    <p class="hint" id="load-hint">Rated 100 %. Above 107 % the output breaker trips after 5 s.</p>
+
+    <h2>Inject a fault</h2>
+    <div class="btn-grid">
+      <button class="btn" data-action="oil_cycle">Oil: next level</button>
+      <button class="btn" data-action="fuel_low">Fuel to 9 %</button>
+      <button class="btn" data-action="fuel_empty">Empty the tank</button>
+      <button class="btn" data-action="refuel">Refuel</button>
+      <button class="btn toggle" data-action="overheat" id="btn-overheat" aria-pressed="false">Overheat</button>
+      <button class="btn toggle" data-action="weak_battery" id="btn-battery" aria-pressed="false">Weak battery</button>
+      <button class="btn" data-action="reset_breaker">Reset breaker</button>
+      <button class="btn" data-action="send">Send telemetry now</button>
+    </div>
+
+    <h2><label for="speed">Model speed</label></h2>
+    <select id="speed">
+      <option value="1">1× real time</option>
+      <option value="10">10×</option>
+      <option value="60">60× (1 min = 1 h)</option>
+      <option value="600">600×</option>
+      <option value="3600">3600× (1 s = 1 h)</option>
+    </select>
+
+    <h2>Scenario</h2>
+    <div class="scenario">
+      <select id="scenario" aria-label="Scenario"></select>
+      <button class="btn go" id="sc-start">Play</button>
+      <button class="btn" id="sc-stop">Stop</button>
+    </div>
+    <p class="hint" id="sc-desc"></p>
+    <p class="progress" id="sc-progress" aria-live="polite"></p>
+
+    <h2>Last actions</h2>
+    <ol class="events" id="events" aria-live="polite"></ol>
+  </section>
+
+  <section class="history" aria-label="Last 30 minutes">
+    <h2 id="history-title">Last 30 minutes</h2>
+    <div class="charts" id="charts"></div>
+  </section>
+
+  <aside class="cloud" aria-label="Cloud view">
+    <h2>What Azure holds</h2>
+    <div id="cloud"><p class="hint">Loading…</p></div>
+  </aside>
+</main>
+</body>
+</html>

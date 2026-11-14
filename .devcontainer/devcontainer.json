@@ -21,5 +21,14 @@
     "IOTHUB_DEVICE_CONNECTION_STRING": {
       "description": "Device connection string for ems-sim-01 (from scripts/register_device.sh or the Azure portal)"
     }
+  },
+  "forwardPorts": [
+    8080
+  ],
+  "portsAttributes": {
+    "8080": {
+      "label": "EMS panel",
+      "onAutoForward": "notify"
+    }
   }
 }

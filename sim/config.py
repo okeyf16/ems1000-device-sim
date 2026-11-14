@@ -26,6 +26,8 @@ class SimConfig:
     tick_seconds: float = 1.0      # real seconds between model steps
     speed: float = 1.0             # simulated seconds per real second (--speed)
     state_dir: Path = Path(".state")
+    panel_port: int = 8080
+    panel_api_url: str | None = None   # staging API for the panel's cloud view
 
 
 def load_config(path: str | Path | None = None) -> SimConfig:
@@ -52,6 +54,8 @@ def load_config(path: str | Path | None = None) -> SimConfig:
         tick_seconds=float((raw.get("simulation") or {}).get("tick_seconds", 1.0)),
         speed=float((raw.get("simulation") or {}).get("speed", 1.0)),
         state_dir=Path(raw.get("state_dir", ".state")),
+        panel_port=int((raw.get("panel") or {}).get("port", 8080)),
+        panel_api_url=os.getenv("EMS_API_URL") or (raw.get("panel") or {}).get("api_url") or None,
     )
 
 

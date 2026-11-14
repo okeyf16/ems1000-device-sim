@@ -22,6 +22,9 @@ RUN useradd --create-home --uid 10001 sim && mkdir -p /app/.state && chown sim /
 USER sim
 VOLUME ["/app/.state"]
 
+# Web panel (optional): docker run -p 8080:8080 ... --panel --panel-host 0.0.0.0
+EXPOSE 8080
+
 # Headless: no keyboard. Extra arguments are appended, e.g.
 #   docker run ... ems1000-device-sim --interval 10 --scenario overload
 ENTRYPOINT ["python", "cli.py", "run", "--headless"]

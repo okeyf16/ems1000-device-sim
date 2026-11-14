@@ -101,10 +101,40 @@ class ScenarioRunner:
         self.scenario = scenario
         self.controls = controls
         self.device = controls.device
-        self.stop_event = stop_event
+        self.stop_event = stop_event          # the whole sim is stopping
+        self.cancel_event = threading.Event()  # just this scenario (panel Stop button)
         self.poll_s = poll_s
         self.min_real_timeout_s = min_real_timeout_s
         self.completed = False
+        # progress, for the web panel
+        self.step = 0
+        self.step_text = ""
+        self.result = "running"  # running | finished | stopped | timed out | failed
+
+    def cancel(self) -> None:
+        self.cancel_event.set()
+
+    @property
+    def running(self) -> bool:
+        return self.result == "running"
+
+    def progress(self) -> dict:
+        return {"name": self.scenario.name, "description": self.scenario.description,
+                "step": self.step, "total": len(self.scenario.steps), "text": self.step_text,
+                "result": self.result, "running": self.running}
+
+    def _stopped(self) -> bool:
+        return self.stop_event.is_set() or self.cancel_event.is_set()
+
+    def _wait(self, seconds: float) -> bool:
+        """Wait up to `seconds` real seconds; True if the scenario should stop."""
+        end = time.monotonic() + seconds
+        while not self._stopped():
+            remaining = end - time.monotonic()
+            if remaining <= 0:
+                return False
+            self.cancel_event.wait(min(remaining, 0.2))
+        return True
 
     def _engine_to_real(self, seconds: float) -> float:
         return seconds / max(self.device.speed, 1e-9)
@@ -120,40 +150,52 @@ class ScenarioRunner:
         }
         return all(checks[k](v) for k, v in cond.items())
 
+    def _end(self, result: str) -> bool:
+        self.result = result
+        if result == "stopped":
+            log.info("Scenario '%s' stopped at step %d", self.scenario.name, self.step)
+        return result == "finished"
+
     def run(self) -> bool:
         sc = self.scenario
         log.info("Scenario '%s' started (%d steps, speed %gx)%s", sc.name, len(sc.steps),
                  self.device.speed, f": {sc.description}" if sc.description else "")
         for n, step in enumerate(sc.steps, 1):
-            if self.stop_event.is_set():
-                return False
+            if self._stopped():
+                return self._end("stopped")
+            self.step = n
             tag = f"[scenario {n}/{len(sc.steps)}]"
             if "say" in step:
+                self.step_text = str(step["say"])
                 log.info("%s %s", tag, step["say"])
             elif "do" in step:
+                self.step_text = f"{step['do']}" + (f" {step['value']}" if "value" in step else "")
                 result = self.controls.do(step["do"], step.get("value"))
-                log.info("%s %s%s: %s", tag, step["do"],
-                         f" {step['value']}" if "value" in step else "", result)
+                self.step_text += f": {result}"
+                log.info("%s %s", tag, self.step_text)
             elif "wait" in step:
                 secs = float(step["wait"])
-                log.info("%s wait %s engine time", tag, _fmt(secs))
-                if self.stop_event.wait(self._engine_to_real(secs)):
-                    return False
+                self.step_text = f"wait {_fmt(secs)} engine time"
+                log.info("%s %s", tag, self.step_text)
+                if self._wait(self._engine_to_real(secs)):
+                    return self._end("stopped")
             elif "until" in step:
                 cond = step["until"]
                 timeout = float(step.get("timeout", DEFAULT_TIMEOUT_S))
-                log.info("%s wait until %s (timeout %s engine time)", tag,
-                         ", ".join(f"{k}={_state(v) if k == 'state' else v}" for k, v in cond.items()), _fmt(timeout))
+                what = ", ".join(f"{k}={_state(v) if k == 'state' else v}" for k, v in cond.items())
+                self.step_text = f"wait until {what}"
+                log.info("%s %s (timeout %s engine time)", tag, self.step_text, _fmt(timeout))
                 deadline = time.monotonic() + max(self._engine_to_real(timeout), self.min_real_timeout_s)
                 while not self._met(cond):
                     if time.monotonic() > deadline:
                         log.warning("%s timed out waiting for %s; scenario stopped", tag, cond)
-                        return False
-                    if self.stop_event.wait(self.poll_s):
-                        return False
+                        return self._end("timed out")
+                    if self._wait(self.poll_s):
+                        return self._end("stopped")
         self.completed = True
+        self.step_text = "finished"
         log.info("Scenario '%s' finished. The sim keeps running (Ctrl+C to stop).", sc.name)
-        return True
+        return self._end("finished")
 
 
 def _fmt(seconds: float) -> str:
@@ -169,6 +211,7 @@ def start_scenario(runner: ScenarioRunner) -> threading.Thread:
         try:
             runner.run()
         except Exception:  # noqa: BLE001
+            runner.result = "failed"
             log.exception("scenario failed")
     t = threading.Thread(target=go, name="scenario", daemon=True)
     t.start()
