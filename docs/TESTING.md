@@ -78,6 +78,25 @@ while running (low-oil trip), `h` while running (over-temp trip after a few minu
 
 Tip: `git checkout config/default.yaml` undoes any test edits to the config.
 
+## M5: device twin
+
+Needs the staging API from ems1000-staging PR #9 deployed. In `/docs`: **GET /api/devices/{device_id}/twin**
+and **PATCH /api/devices/{device_id}/twin** (the Examples dropdown has ready-made bodies). Portal alternative:
+IoT Hub → Devices → `ems-sim-01` → **Device twin** (edit `properties.desired`, then **Save**).
+
+Start the sim first: `python cli.py run`.
+
+| ID | Steps | Pass when |
+|---|---|---|
+| M5-01 | GET …/twin | `connection_state` Connected; `reported.device.model` "Sumec Firman ECO4990ES", `reported.state` "OFF", `reported.settings` lists the 6 settings |
+| M5-02 | PATCH example "Telemetry every 10 s", then GET …/twin | Sim logs `twin: telemetry_interval_s = 10` and heartbeats every 10 s; `reported.settings_status.telemetry_interval_s.status` "applied" |
+| M5-03 | POST command `start`, then PATCH example "Overload: 110 %" | After ~5 s a message with `v` 0, `flt` 48, `run` 2; `reported.settings.load_pct` 110 |
+| M5-04 | Portal Device twin: add `"speed": 0` under `desired`, Save. Then API PATCH `{"speed": 0}` | Portal: `reported.settings_status.speed` "rejected", reason "must be between 1 and 3600". API: 400, nothing sent |
+| M5-05 | Stop the sim (Ctrl+C). PATCH `{"load_pct": 60}`. Start the sim | Start-up log `twin: load_pct = 60.0 (overrides config)`; `reported.settings.load_pct` 60 |
+| M5-06 | Press `e` then `s` in the sim (start with empty tank), then GET …/twin. Press `F`, then POST `reset_fault` | `reported.state` "FAULT", `last_fault.reason` "Fuel Level Below Threshold"; after the reset state "OFF" and `last_fault` still there |
+
+Afterwards: PATCH example "Clear settings" so the sim goes back to its config values.
+
 ## M4: CI and container
 
 | ID | Steps | Pass when |

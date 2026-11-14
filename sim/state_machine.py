@@ -58,6 +58,7 @@ class Generator:
         self._timer: threading.Timer | None = None
         self.state = RunState.OFF
         self.flt = 0
+        self.fault_reason = ""   # why the last Fault happened (device twin last_fault)
 
     # ---- helpers -------------------------------------------------------------
     @property
@@ -104,6 +105,7 @@ class Generator:
             ok, reason, bits = self._safety_check()
             if not ok:
                 self.flt |= bits
+                self.fault_reason = reason
         if not ok:
             self._set_state(RunState.FAULT)
             return self._reply(409, "refused", reason=reason)
@@ -158,6 +160,7 @@ class Generator:
         self._cancel_timer()
         with self._lock:
             self.flt |= bits
+            self.fault_reason = reason
         log.warning("generator fault: %s", reason)
         self._set_state(RunState.FAULT)
         return True

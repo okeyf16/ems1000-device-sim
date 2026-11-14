@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import logging
 import threading
+import time
 
 from .budget import BudgetGuard
 from .commands import CommandHandler
@@ -20,6 +21,7 @@ from .physics import GeneratorModel
 from .state_machine import STATE_NAMES, Generator, RunState
 from .telemetry import PayloadError, build_payload, new_traceparent, validate
 from .transport import Transport
+from .twin import TwinManager
 
 log = logging.getLogger(__name__)
 
@@ -53,6 +55,13 @@ class VirtualDevice:
             on_command=(lambda: self.budget.record()) if self.budget else None,
         )
         self.transport.set_method_handler(self.commands.handle)
+        self._wake = threading.Event()
+        self.twin = TwinManager(self)
+        self.transport.set_desired_handler(self.twin.on_desired_patch)
+
+    def wake(self) -> None:
+        """Re-check the heartbeat timer now (e.g. the interval was changed remotely)."""
+        self._wake.set()
 
     # Kept for compatibility with M1/M2 callers and tests
     @property
@@ -96,6 +105,7 @@ class VirtualDevice:
 
     def _on_state_change(self, old: RunState, new: RunState) -> None:
         self.send_telemetry(reason=f"state {STATE_NAMES[old]}->{STATE_NAMES[new]}")
+        self.twin.report_state()
 
     def send_telemetry(self, reason: str = "heartbeat") -> bool:
         with self._send_lock:
@@ -119,10 +129,20 @@ class VirtualDevice:
                      self.seq, len(body), used, body)
             return True
 
+    def _sleep_until_next_beat(self, last_beat: float) -> None:
+        """Wait `interval` seconds, re-reading it so a remote change applies straight away."""
+        while not self.stop_event.is_set():
+            remaining = last_beat + self.interval - time.monotonic()
+            if remaining <= 0:
+                return
+            self._wake.wait(min(remaining, 0.5))
+            self._wake.clear()
+
     def run(self, max_messages: int | None = None) -> None:
         log.info("[%s] boot #%d, heartbeat every %ss, model speed %gx, listening for commands",
                  self.device_id, self.boot, self.interval, self.speed)
         self.transport.connect()
+        self.twin.start()
         threading.Thread(target=self._ticker, name=f"{self.device_id}-model", daemon=True).start()
         try:
             sent = 0
@@ -131,7 +151,7 @@ class VirtualDevice:
                     sent += 1
                 if max_messages is not None and sent >= max_messages:
                     break
-                self.stop_event.wait(self.interval)
+                self._sleep_until_next_beat(time.monotonic())
         finally:
             self.generator.shutdown()
             self.transport.disconnect()

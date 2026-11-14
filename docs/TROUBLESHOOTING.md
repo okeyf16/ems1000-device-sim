@@ -36,6 +36,16 @@ Where to look in Application Insights: Function App → **Application Insights**
 `traces | where timestamp > ago(30m) | order by timestamp desc` and the same for `exceptions`.
 **Invocations** (Function → Monitor) also lists each run with its log.
 
+## Device twin
+
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Sim starts with an unexpected load/interval/speed | A desired setting stored in the twin overrides the config (start-up log says "overrides config") | PATCH the setting to `null` (or the "Clear settings" example), or edit the twin in the portal |
+| PATCH returns 200 but nothing changes | The sim is offline (applies on next connect) or rejected the value | GET …/twin: check `connection_state` and `reported.settings_status` |
+| `settings_status` says rejected | Out of range or unknown name (only possible via the portal; the API checks first) | Fix the value; ranges are in the README |
+| Reported properties stale | Twin updates are skipped once the daily budget is reached | `python cli.py budget`; wait for 00:00 UTC |
+| Log: "could not read the device twin; running without it" | IoT Hub twin call failed at start-up | Telemetry and commands still work; restart the sim to retry |
+
 ## API and commands
 
 `POST /api/devices/{id}/command` mirrors the device's answer:
