@@ -2,12 +2,17 @@
   "name": "ems1000-device-sim",
   "image": "mcr.microsoft.com/devcontainers/python:1-3.11-bookworm",
   "features": {
-    "ghcr.io/devcontainers/features/azure-cli:1": {}
+    "ghcr.io/devcontainers/features/azure-cli:1": {},
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
   },
   "postCreateCommand": "pip install -r requirements-dev.txt && az extension add --name azure-iot --only-show-errors || true",
   "customizations": {
     "vscode": {
-      "extensions": ["ms-python.python", "ms-python.vscode-pylance", "vsciot-vscode.azure-iot-toolkit"]
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "vsciot-vscode.azure-iot-toolkit"
+      ]
     }
   },
   "secrets": {

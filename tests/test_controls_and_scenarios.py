@@ -30,7 +30,7 @@ def make(tmp_path, timers=None, **kw):
 
 def test_every_hotkey_maps_to_an_action_and_is_in_help():
     text = help_text()
-    for key, (action, label) in HOTKEYS.items():
+    for action, label in HOTKEYS.values():
         assert action in ACTION_NAMES and label in text
     assert set(HOTKEYS) == set("sxr+-ofeFhbpti")
 
@@ -61,12 +61,18 @@ def test_oil_fuel_overheat_battery_keys(tmp_path):
     dev, *_, c = make(tmp_path)
     m = dev.model
     assert [handle_key(c, "o") and m.oil for _ in range(3)] == [1, 2, 0]
-    handle_key(c, "f"); assert round(m.fuel_pct) == 9
-    handle_key(c, "e"); assert m.fuel_pct == 0
-    handle_key(c, "F"); assert m.fuel_pct == 100
-    handle_key(c, "h"); assert m.overheat
-    handle_key(c, "h"); assert not m.overheat
-    handle_key(c, "b"); assert m.weak_battery
+    handle_key(c, "f")
+    assert round(m.fuel_pct) == 9
+    handle_key(c, "e")
+    assert m.fuel_pct == 0
+    handle_key(c, "F")
+    assert m.fuel_pct == 100
+    handle_key(c, "h")
+    assert m.overheat
+    handle_key(c, "h")
+    assert not m.overheat
+    handle_key(c, "b")
+    assert m.weak_battery
     assert c.do("weak_battery", False) == "weak battery off"
     assert c.do("overheat", "on").startswith("overheat ON")
 
@@ -74,7 +80,8 @@ def test_oil_fuel_overheat_battery_keys(tmp_path):
 def test_breaker_key_refused_while_overloaded_then_resets_and_sends(tmp_path):
     timers = FakeTimers()
     dev, t, _, c = make(tmp_path, timers)
-    c.do("start"); timers.fire()
+    c.do("start")
+    timers.fire()
     c.do("load", 110)
     for _ in range(6):
         dev.tick(1)
@@ -109,7 +116,8 @@ def test_speed_scales_model_time_only(tmp_path):
     th = threading.Thread(target=dev._ticker, daemon=True)
     th.start()
     stop.wait(0.5)                                # ~0.5 s real -> ~300 s engine
-    stop.set(); th.join(1)
+    stop.set()
+    th.join(1)
     burned_l = 15 - dev.model.fuel_l
     assert 0.03 < burned_l < 0.2                  # 0.9 L/h for ~300 s = ~0.075 L
 
@@ -165,7 +173,8 @@ def run_scenario(tmp_path, name, speed=3600.0):
     try:
         ok = runner.run()
     finally:
-        stop.set(); worker.join(2)
+        stop.set()
+        worker.join(2)
     return ok, dev, [json.loads(b) for b, _ in t.sent]
 
 

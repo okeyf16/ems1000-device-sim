@@ -1,0 +1,14 @@
+[tool.ruff]
+target-version = "py311"
+line-length = 120
+
+[tool.ruff.lint]
+# pyflakes, pycodestyle, import order, bugbear (likely bugs), pyupgrade
+select = ["F", "E", "W", "I", "B", "UP"]
+ignore = ["E731"]  # small lambdas are used on purpose in sim/controls.py and sim/physics.py
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["sim", "cli", "fakes"]

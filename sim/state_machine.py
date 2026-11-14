@@ -11,8 +11,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from enum import IntEnum
-from typing import Callable
 
 log = logging.getLogger(__name__)
 
