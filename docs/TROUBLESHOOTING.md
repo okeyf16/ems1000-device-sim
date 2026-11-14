@@ -14,6 +14,8 @@ Problems met while building the EMS-1000 staging pipeline, by symptom. Pipeline:
 | Sim stops sending, log says budget | Daily guard reached 7,500 (IoT Hub F1 allows 8,000/day, UTC) | Wait for 00:00 UTC. `python cli.py budget` shows the count. Use `--interval 60` for long runs |
 | Keys do nothing | Not a terminal (piped, container) or `--headless` | Run in the Codespace terminal without `--headless` |
 | Scenario stops with "timed out" | A condition never became true | Check the config hasn't been edited (e.g. fuel too low to start): `git checkout config/default.yaml` |
+| Rebuild ends in a **recovery container** (bare Alpine, no Python); log shows `NO_PUBKEY` / `repository ... is not signed` | A package repository in the base image has a bad signing key, so dev-container features fail to install | `.devcontainer/Dockerfile` removes the Yarn repository for this reason. If another repository breaks, remove it the same way; the "Dev container" CI check builds the image on PRs |
+| `docker: command not found` in the Codespace | Codespace not rebuilt since Docker was added | Ctrl+Shift+P → **Codespaces: Rebuild Container** |
 | Codespace stopped by itself | Idle timeout (30 min default), or monthly quota used | Restart it. Long unattended runs belong in a container (see README, Docker) |
 
 ## Telemetry doesn't arrive

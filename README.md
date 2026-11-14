@@ -206,7 +206,7 @@ docker run --rm -e IOTHUB_DEVICE_CONNECTION_STRING ems1000-device-sim \
 
 Anything after the image name is added to `python cli.py run --headless`. To keep the boot
 counter and daily message count across container restarts, mount a volume:
-`-v ems-sim-state:/app/.state`. The Codespace includes Docker (after a rebuild of the codespace).
+`-v ems-sim-state:/app/.state`. The Codespace includes Docker (after a rebuild of the codespace; see docs/TROUBLESHOOTING.md if the rebuild fails).
 Not deployed anywhere yet; Azure Container Apps is the planned home for 24/7 runs.
 
 ## Development checks
