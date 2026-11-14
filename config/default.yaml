@@ -12,11 +12,24 @@ budget:
   daily_limit: 8000     # IoT Hub F1 free tier, all devices + direct methods combined
   stop_at: 7500         # simulator stops sending at this count (UTC day), leaves headroom
 
-sensors:                # baseline values used while the generator is OFF (M1)
+generator:
+  crank_seconds: 2.5    # firmware start-relay pulse
+  stop_seconds: 3.0     # firmware stop-relay pulse
+
+sensors:
+  # parked (OFF / STOP / FAULT)
   ambient_temp_c: 28.0
   battery_rest_v: 12.6
   fuel_start_pct: 85.0
   rssi_start_dbm: -68
+  # basic running values (M2); M3 makes them evolve
+  run_voltage_v: 230.0
+  run_frequency_hz: 50.0
+  run_load_a: 8.0
+  run_temp_c: 65.0
+  charging_v: 13.8
+  crank_battery_v: 10.6
+  low_fuel_pct: 5.0     # pre-start interlock threshold (firmware: empty tank)
   noise: true           # small random jitter on analogue readings
 
 state_dir: .state       # persisted boot counter + daily message count

@@ -35,6 +35,14 @@ class BudgetGuard:
     def used(self) -> int:
         return self._current(self._file.load())
 
+    def record(self, n: int = 1) -> None:
+        """Count messages that are sent regardless of the guard (direct-method calls:
+        IoT Hub bills them against the same daily quota)."""
+        def _apply(data: dict) -> None:
+            data["count"] = self._current(data) + n
+            data["day"] = self._today()
+        self._file.update(_apply)
+
     def try_consume(self, n: int = 1) -> bool:
         """Reserve n messages. Returns False (and sends nothing) when over budget."""
         allowed = {"ok": False}
