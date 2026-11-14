@@ -1,0 +1,31 @@
+name: Dev container
+
+# Builds the Codespace image (base image + features) whenever its definition changes,
+# so a broken Codespace setup shows up on the PR instead of as a recovery container.
+on:
+  pull_request:
+    paths: [".devcontainer/**", ".github/workflows/devcontainer.yml"]
+  push:
+    branches: [main]
+    paths: [".devcontainer/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Codespace image builds
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: Build dev container (base image + features)
+        run: npx --yes @devcontainers/cli@latest build --workspace-folder . --image-name ems-sim-devcontainer
+      - name: Check tools inside
+        run: |
+          docker run --rm --entrypoint bash ems-sim-devcontainer -lc \
+            'python --version && az --version | head -1 && docker --version && dockerd --version'
