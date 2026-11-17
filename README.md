@@ -7,7 +7,7 @@ It connects to Azure IoT Hub over MQTT (TLS, port 8883) and sends the same telem
 
 [![CI](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml)
 
-Guides: [live tests](docs/TESTING.md) · [troubleshooting](docs/TROUBLESHOOTING.md)
+Guides: [live tests](docs/TESTING.md) · [troubleshooting](docs/TROUBLESHOOTING.md) · [firmware build reference](docs/BUILD_REFERENCE.md)
 
 ## How it fits together
 
