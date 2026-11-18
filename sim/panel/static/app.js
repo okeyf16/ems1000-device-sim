@@ -84,21 +84,21 @@ function buildDials(limits) {
   for (const d of DIALS) {
     const wrap = el("div", { class: "dial" });
     const svg = el("svg", { svg: true, viewBox: "0 0 200 150", role: "img", "aria-label": d.name });
-    svg.append(el("path", { svg: true, d: arc(-120, 120, 80), fill: "none", stroke: "#e1e5e3", "stroke-width": 12 }));
+    svg.append(el("path", { svg: true, class: "g-track", d: arc(-120, 120, 80), fill: "none", stroke: "#e1e5e3", "stroke-width": 12 }));
     for (const [lo, hi, kind] of d.bands(limits)) {
       const a0 = angle(d, lo), a1 = angle(d, hi);
       if (a1 > a0) svg.append(el("path", { svg: true, d: arc(a0, a1, 80), fill: "none", stroke: BAND_COLOUR[kind], "stroke-width": 12 }));
     }
     for (let k = 0; k <= 10; k++) {  // ticks
       const a = -120 + k * 24, [x0, y0] = polar(a, 66), [x1, y1] = polar(a, k % 5 ? 71 : 74);
-      svg.append(el("line", { svg: true, x1: x0, y1: y0, x2: x1, y2: y1, stroke: "#55636d", "stroke-width": k % 5 ? 1 : 2 }));
+      svg.append(el("line", { svg: true, class: "g-tick", x1: x0, y1: y0, x2: x1, y2: y1, stroke: "#55636d", "stroke-width": k % 5 ? 1 : 2 }));
     }
     const [lx, ly] = polar(-120, 56), [hx, hy] = polar(120, 56);
-    svg.append(el("text", { svg: true, x: lx + 4, y: ly + 16, "font-size": 11, fill: "#55636d", "text-anchor": "middle" }, String(d.min)));
-    svg.append(el("text", { svg: true, x: hx - 4, y: hy + 16, "font-size": 11, fill: "#55636d", "text-anchor": "middle" }, String(d.max)));
+    svg.append(el("text", { svg: true, class: "g-label", x: lx + 4, y: ly + 16, "font-size": 11, fill: "#55636d", "text-anchor": "middle" }, String(d.min)));
+    svg.append(el("text", { svg: true, class: "g-label", x: hx - 4, y: hy + 16, "font-size": 11, fill: "#55636d", "text-anchor": "middle" }, String(d.max)));
     const needle = el("g", { svg: true, class: "needle" });
-    needle.append(el("polygon", { svg: true, points: "97,100 103,100 100,28", fill: "#1f2b33" }));
-    svg.append(needle, el("circle", { svg: true, cx: 100, cy: 100, r: 7, fill: "#1f2b33" }));
+    needle.append(el("polygon", { svg: true, class: "g-ink", points: "97,100 103,100 100,28", fill: "#1f2b33" }));
+    svg.append(needle, el("circle", { svg: true, class: "g-ink", cx: 100, cy: 100, r: 7, fill: "#1f2b33" }));
     const value = el("div", { class: "value" }, "–");
     const name = el("div", { class: "name" }, d.name);
     wrap.append(svg, value, name);
@@ -119,19 +119,19 @@ function buildDials(limits) {
     const wrap = el("div", { class: "strip" });
     const svg = el("svg", { svg: true, viewBox: "0 0 70 220", role: "img", "aria-label": d.name });
     const y = (v) => 200 - ((Math.max(d.min, Math.min(d.max, v)) - d.min) / (d.max - d.min)) * 190;
-    svg.append(el("rect", { svg: true, x: 22, y: 10, width: 22, height: 190, rx: 4, fill: "#e1e5e3" }));
+    svg.append(el("rect", { svg: true, class: "g-track-fill", x: 22, y: 10, width: 22, height: 190, rx: 4, fill: "#e1e5e3" }));
     for (const [lo, hi, kind] of d.bands(limits)) {
       if (hi > lo) svg.append(el("rect", { svg: true, x: 22, y: y(hi), width: 22, height: y(lo) - y(hi), fill: BAND_COLOUR[kind] }));
     }
     for (let k = 0; k <= 8; k++) {
       const ty = 10 + k * 190 / 8;
-      svg.append(el("line", { svg: true, x1: 44, x2: k % 4 ? 49 : 53, y1: ty, y2: ty, stroke: "#55636d", "stroke-width": k % 4 ? 1 : 2 }));
+      svg.append(el("line", { svg: true, class: "g-tick", x1: 44, x2: k % 4 ? 49 : 53, y1: ty, y2: ty, stroke: "#55636d", "stroke-width": k % 4 ? 1 : 2 }));
     }
-    svg.append(el("text", { svg: true, x: 56, y: 14, "font-size": 10, fill: "#55636d" }, String(d.max)));
-    svg.append(el("text", { svg: true, x: 56, y: 203, "font-size": 10, fill: "#55636d" }, String(d.min)));
+    svg.append(el("text", { svg: true, class: "g-label", x: 56, y: 14, "font-size": 10, fill: "#55636d" }, String(d.max)));
+    svg.append(el("text", { svg: true, class: "g-label", x: 56, y: 203, "font-size": 10, fill: "#55636d" }, String(d.min)));
     const marker = el("g", { svg: true, class: "marker" });
-    marker.append(el("polygon", { svg: true, points: "8,-7 8,7 20,0", fill: "#1f2b33" }),
-                  el("line", { svg: true, x1: 18, x2: 46, y1: 0, y2: 0, stroke: "#1f2b33", "stroke-width": 3 }));
+    marker.append(el("polygon", { svg: true, class: "g-ink", points: "8,-7 8,7 20,0", fill: "#1f2b33" }),
+                  el("line", { svg: true, class: "g-ink-line", x1: 18, x2: 46, y1: 0, y2: 0, stroke: "#1f2b33", "stroke-width": 3 }));
     svg.append(marker);
     const value = el("div", { class: "value" }, "–");
     wrap.append(svg, value, el("div", { class: "name" }, d.name));
@@ -414,7 +414,30 @@ async function act(action, value) {
   pollLive();
 }
 
+// ---- theme ------------------------------------------------------------------------------
+// Light or dark; remembered in this browser, otherwise follows the system setting.
+const THEME_KEY = "ems-panel-theme";
+function savedTheme() {
+  try { return localStorage.getItem(THEME_KEY); } catch { return null; }
+}
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  const btn = $("theme");
+  btn.setAttribute("aria-pressed", String(theme === "dark"));
+  btn.textContent = theme === "dark" ? "Light theme" : "Dark theme";
+}
+function initTheme() {
+  const prefersDark = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches;
+  applyTheme(savedTheme() || (prefersDark ? "dark" : "light"));
+  $("theme").addEventListener("click", () => {
+    const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+    applyTheme(next);
+    try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode: not remembered */ }
+  });
+}
+
 async function init() {
+  initTheme();
   document.querySelectorAll("[data-action]").forEach((b) => b.addEventListener("click", () => act(b.dataset.action)));
   $("load").addEventListener("input", (e) => { $("load-out").textContent = `${e.target.value} %`; });
   $("load").addEventListener("change", (e) => act("load", Number(e.target.value)));

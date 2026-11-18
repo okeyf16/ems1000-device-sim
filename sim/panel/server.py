@@ -85,6 +85,7 @@ class Panel:
         self.api_key = api_key or None
         self._fetch = fetch or functools.partial(_http_get_json, api_key=self.api_key)
         self._cloud_parts: dict[str, tuple[float, dict]] = {}
+        self._rest_soc: int | None = None   # battery charge last measured with the engine off
         self._lock = threading.Lock()
 
     # ---- read ------------------------------------------------------------------------
@@ -126,9 +127,11 @@ class Panel:
         d, m = self.device, self.device.model
         run = int(d.generator.state)
         r = m.read(run)
+        if run in (0, 4) or self._rest_soc is None:   # engine off: voltage tells the charge
+            self._rest_soc = estimate_soc(r.vb)
         self.history.append({"ts": int(time.time() * 1000), "run": run, "v": r.v, "f": r.f,
                              "load": round(m.load * 100, 1), "fuel": r.fuel, "t": r.t, "vb": r.vb,
-                             "soc": estimate_soc(r.vb)})
+                             "soc": self._rest_soc})
 
     def history_points(self, since: int = 0) -> list[dict]:
         return [p for p in list(self.history) if p["ts"] > since]

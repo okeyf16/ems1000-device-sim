@@ -199,6 +199,15 @@ def test_api_key_sent_as_header(monkeypatch):
     assert seen.get("X-api-key") == "k1"
 
 
+def test_history_holds_resting_battery_charge_while_running(tmp_path):
+    p, dev, timers, _ = make_panel(tmp_path)
+    p.sample()
+    rest = p.history[-1]["soc"]
+    p.action("start")
+    p.sample()                         # cranking: voltage dips, charge shouldn't
+    assert p.history[-1]["soc"] == rest
+
+
 def test_soc_estimate_curve():
     from sim.panel.server import estimate_soc
     assert estimate_soc(11.5) == 0 and estimate_soc(12.2) == 50 and estimate_soc(13.9) == 100

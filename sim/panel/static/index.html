@@ -14,6 +14,7 @@
     <h1>EMS-1000 <span class="thin">simulator</span></h1>
     <p id="device-line">Connecting…</p>
   </div>
+  <div class="plate-tools">
   <ol class="annunciator" id="lamps" aria-label="Generator state">
     <li data-state="OFF">Off</li>
     <li data-state="CRANKING">Cranking</li>
@@ -21,6 +22,8 @@
     <li data-state="STOPPING">Stopping</li>
     <li data-state="FAULT" class="fault">Fault</li>
   </ol>
+  <button class="btn theme-btn" id="theme" type="button" aria-pressed="false">Dark theme</button>
+  </div>
 </header>
 
 <div id="offline" class="offline" hidden>The panel can't reach the simulator. Is <code>python cli.py run --panel</code> still running?</div>
