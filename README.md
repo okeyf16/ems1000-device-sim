@@ -246,6 +246,9 @@ In a Codespace, a notification offers **Open in Browser** for port 8080 (or use 
   (signed in to GitHub) can open it. Keep it private: there's no PIN yet (planned add-on for shareable links).
   Actions need the panel's own header and JSON body, so other websites can't trigger them.
 - Cloud view: `panel.api_url` in `config/default.yaml` (or `EMS_API_URL`); empty turns it off.
+- API key for the cloud view: the Codespace secret (or `.env` entry) `EMS_API_KEY`, one of the staging API's keys. Never put it in the YAML.
+- Gauges: voltage, load %, fuel, engine temperature and battery charge (estimated from voltage; held at the last engine-off value while running) as dials; frequency and load current as vertical strips; oil as a lamp (the sensor is a float switch). Times are West Africa Time.
+- The cloud view reads the stored state every 10 s and alerts every 30 s (free table reads), and the device twin every 2 minutes, because twin reads count against IoT Hub's 8,000 daily messages.
 - Options: `--panel-port 8081`; `--panel-host 0.0.0.0` only inside a container (`docker run -p 8080:8080 …`).
 
 ## Docker

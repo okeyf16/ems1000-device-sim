@@ -90,7 +90,7 @@ def cmd_run(args) -> int:
         start_scenario(runner)
     if args.panel:
         try:
-            serve(Panel(controls, stop, cfg.panel_api_url, runner), args.panel_host,
+            serve(Panel(controls, stop, cfg.panel_api_url, runner, api_key=cfg.panel_api_key), args.panel_host,
                   args.panel_port or cfg.panel_port)
         except OSError as err:
             logging.error("Web panel could not start on port %s: %s", args.panel_port or cfg.panel_port, err)

@@ -25,6 +25,7 @@ Problems met while building the EMS-1000 staging pipeline, by symptom. Pipeline:
 | "Web panel could not start on port 8080" | Another sim (or something else) already uses the port | Stop the other sim, or `--panel-port 8081` |
 | Red banner "The panel can't reach the simulator" | The sim was stopped (Ctrl+C) or crashed | Restart `python cli.py run --panel`; the page reconnects by itself |
 | No Codespaces notification for 8080 | Notifications dismissed, or codespace not rebuilt since M6 | **Ports** tab → Forward a Port → 8080 |
+| *What Azure holds* says "API key missing or wrong" or "No API key" | `EMS_API_KEY` not set, or an old key after rotation | Add or update the Codespace secret `EMS_API_KEY` (staging output `api_keys`), then restart the Codespace or the simulator |
 | *What Azure holds* shows HTTP errors | Staging API down, quota exceeded (403), or wrong `panel.api_url` | Open the API's `/docs`; App Service quotas (see README); check the URL |
 | Cloud view says the last message is old | Telemetry isn't reaching Azure | See *Telemetry doesn't arrive* below |
 

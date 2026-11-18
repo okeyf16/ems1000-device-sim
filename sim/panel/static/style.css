@@ -79,6 +79,8 @@ code { font-family: inherit; background: var(--face); padding: 0 4px; border-rad
 }
 
 /* ---- dials ---------------------------------------------------------------------- */
+.gauges { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: stretch; }
+@media (max-width: 560px) { .gauges { grid-template-columns: 1fr; } }
 .dials { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
 @media (max-width: 560px) { .dials { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .dial {
@@ -94,6 +96,30 @@ code { font-family: inherit; background: var(--face); padding: 0 4px; border-rad
 @media (prefers-reduced-motion: reduce) { .dial .needle { transition: none; } }
 .dial.is-warn .value { color: var(--warn); }
 .dial.is-bad .value { color: var(--bad); }
+.dial .est { margin-left: 4px; font-size: .75rem; color: var(--ink-soft); }
+
+/* oil: a lamp, because the sensor is a float switch, not a level */
+.dial.oil { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+.oil-lamp { width: 64px; height: 64px; border-radius: 50%; background: var(--lamp-off); border: 3px solid var(--steel-dark);
+  box-shadow: inset 0 2px 4px rgba(0, 0, 0, .15); }
+.oil-lamp.ok { background: var(--ok); box-shadow: 0 0 14px rgba(47, 125, 79, .5); }
+.oil-lamp.warn { background: var(--warn); box-shadow: 0 0 14px rgba(201, 138, 12, .55); }
+.oil-lamp.bad { background: var(--bad); box-shadow: 0 0 16px rgba(184, 50, 42, .6); }
+.dial.oil .value { font-size: 1.15rem; }
+
+/* vertical strips: frequency and load current */
+.strips { display: flex; gap: 10px; }
+@media (max-width: 560px) { .strips { justify-content: center; } }
+.strip { background: var(--face); border: 1px solid var(--steel-dark); border-radius: 12px; padding: 10px 8px 12px;
+  text-align: center; width: 104px; display: flex; flex-direction: column; box-shadow: inset 0 0 0 5px #e9ece9; }
+.strip svg { width: 100%; flex: 1; min-height: 180px; display: block; }
+.strip .value { font-size: 1.35rem; font-weight: 600; font-variant-numeric: tabular-nums; line-height: 1.1; }
+.strip .value small { font-size: .8rem; font-weight: 400; color: var(--ink-soft); margin-left: 2px; }
+.strip .name { color: var(--ink-soft); font-size: .82rem; }
+.strip .marker { transition: transform .6s cubic-bezier(.3, 1.4, .5, 1); }
+@media (prefers-reduced-motion: reduce) { .strip .marker { transition: none; } }
+.strip.is-warn .value { color: var(--warn); }
+.strip.is-bad .value { color: var(--bad); }
 
 .status-strip { margin-top: 14px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: start; }
 @media (max-width: 700px) { .status-strip { grid-template-columns: 1fr; } }
@@ -155,3 +181,5 @@ select { font: inherit; padding: 7px 8px; border-radius: 6px; border: 1px solid 
 .cloud h3 { font-size: .9rem; margin: 12px 0 6px; }
 .cloud .checks { margin: 0; padding-left: 18px; font-size: .88rem; color: #8a5f05; }
 .cloud .allgood { color: var(--ok); font-size: .9rem; margin: 0; }
+.cloud .alerts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.hint.warn { color: #8a5f05; }
