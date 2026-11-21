@@ -186,6 +186,8 @@ select { font: inherit; padding: 7px 8px; border-radius: 6px; border: 1px solid 
 .cloud dl { display: grid; grid-template-columns: auto 1fr; gap: 3px 12px; margin: 0 0 10px; font-size: .9rem; font-variant-numeric: tabular-nums; }
 .cloud dt { color: var(--ink-soft); }
 .cloud dd { margin: 0; overflow-wrap: anywhere; }
+.cloud dd.conn-on { color: var(--ok); font-weight: 600; }
+.cloud dd.conn-off { color: var(--bad); font-weight: 700; }
 .cloud h3 { font-size: .9rem; margin: 12px 0 6px; }
 .cloud .checks { margin: 0; padding-left: 18px; font-size: .88rem; color: var(--warn-text); }
 .cloud .allgood { color: var(--ok); font-size: .9rem; margin: 0; }

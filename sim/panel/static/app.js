@@ -319,6 +319,7 @@ function ruleName(a) {
     return m ? `No telemetry for ${m[1]} min` : "No telemetry received";
   }
   if (rule.includes("latency")) return "Cloud processing slow";
+  if (rule === "device-offline") return "Device offline";
   return rule;
 }
 function renderCloud(c) {
@@ -332,7 +333,7 @@ function renderCloud(c) {
   const resp = c.state || {};
   const tw = c.twin || {};
   const dl = el("dl");
-  const row = (k, v) => dl.append(el("dt", {}, k), el("dd", {}, v));
+  const row = (k, v, cls) => dl.append(el("dt", {}, k), el("dd", cls ? { class: cls } : {}, v));
   if (resp.error) row("Stored state", resp.error);
   else if (resp.status) {                      // API since PR #14
     const r = resp.readings || {};
@@ -341,6 +342,15 @@ function renderCloud(c) {
     row("Stored state", resp.status.run_state || "–");
     row("Stored readings", r.v !== undefined
       ? `${r.v} V, ${r.f} Hz, load ${r.load_pct} %, fuel ${r.fuel} %, battery ${r.soc_pct} %${r.soc_reliable ? "" : " (est.)"}` : "–");
+    // Online/Offline from IoT Hub connect/disconnect events (Event Grid); red when Offline
+    const link = resp.link || {};
+    if (link.connection_status) {
+      const since = link.last_status_change ? Date.parse(link.last_status_change) : null;
+      const when = since ? ` since ${wat(since)} (${ago(since)})` : "";
+      row("Connection", `${link.connection_status}${when}`, link.connection_status === "Offline" ? "conn-off" : "conn-on");
+    } else if ("connection_status" in link) {
+      row("Connection", "no connect/disconnect event yet");
+    }
   } else {                                     // older API shape
     const st = resp.state || {};
     row("Last message", st.ts ? `${ago(st.ts)} (${wat(st.ts)})` : "–");

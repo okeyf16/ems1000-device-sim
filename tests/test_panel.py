@@ -4,6 +4,7 @@ import http.client
 import json
 import threading
 import time
+from datetime import UTC
 
 import pytest
 
@@ -323,3 +324,34 @@ def test_scenario_over_http(server):
     assert req("POST", "/api/scenario/start", {"name": "overload"}, GOOD)[0] == 400  # already running
     assert req("POST", "/api/scenario/stop", {}, GOOD)[0] == 200
     assert req("POST", "/api/scenario/start", {"name": "nope"}, {**GOOD})[0] in (400,)
+
+
+def _state_with_link(**link):
+    def fetch(url):
+        if url.endswith("/state"):
+            return {"device_id": "ems-sim-01", "source": "stored", "received_at": link.pop("_received"),
+                    "readings": {"v": 0}, "status": {"run": 0}, "link": {"ts": int(time.time() * 1000), **link}}
+        if "/api/alerts" in url:
+            return {"count": 0, "alerts": []}
+        return {"connection_state": "Connected", "reported": {}}
+    return fetch
+
+
+def test_offline_with_newer_message_is_flagged(tmp_path):
+    from datetime import datetime, timedelta
+    now = datetime.now(UTC)
+    fetch = _state_with_link(connection_status="Offline",
+                             last_status_change=(now - timedelta(minutes=5)).isoformat(),
+                             _received=(now - timedelta(seconds=20)).isoformat())
+    p, *_ = make_panel(tmp_path, fetch=fetch)
+    assert any("Offline although messages arrived" in n for n in p.cloud()["checks"])
+
+
+def test_offline_without_newer_message_is_not_flagged(tmp_path):
+    from datetime import datetime, timedelta
+    now = datetime.now(UTC)
+    fetch = _state_with_link(connection_status="Offline",
+                             last_status_change=(now - timedelta(minutes=1)).isoformat(),
+                             _received=(now - timedelta(minutes=6)).isoformat())
+    p, *_ = make_panel(tmp_path, fetch=fetch)
+    assert not any("Offline although" in n for n in p.cloud()["checks"])
