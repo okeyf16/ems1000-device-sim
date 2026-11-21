@@ -17,6 +17,10 @@ async function api(path, body) {
   };
   const resp = await fetch(path, opts);
   const data = await resp.json().catch(() => ({}));
+  if (resp.status === 401 && data.login) {   // shared panel: session missing or expired
+    window.location.replace(data.login);
+    throw new Error("login required");
+  }
   if (!resp.ok) throw new Error(data.error || `HTTP ${resp.status}`);
   return data;
 }
@@ -229,8 +233,9 @@ function renderLive(data) {
 function renderScenario(sc) {
   const p = $("sc-progress");
   p.textContent = "";
-  $("sc-stop").disabled = !(sc && sc.running);
-  $("sc-start").disabled = !!(sc && sc.running);
+  const viewer = document.body.classList.contains("viewer");
+  $("sc-stop").disabled = viewer || !(sc && sc.running);
+  $("sc-start").disabled = viewer || !!(sc && sc.running);
   if (!sc) return;
   const verb = sc.running ? "Playing" : `Scenario ${sc.result}:`;
   p.append(document.createTextNode(`${verb} ${sc.name}, step ${sc.step} of ${sc.total}: ${sc.text}`));
@@ -459,8 +464,31 @@ function initTheme() {
   });
 }
 
+// Shared panel: show who you are signed in as; viewers get the controls disabled.
+async function initSession() {
+  let s = { sharing: false, role: "operator" };
+  try { s = await api("/api/session"); } catch { return; }
+  if (!s.sharing) return;
+  const tools = document.querySelector(".plate-tools");
+  tools.append(el("span", { class: `role-badge ${s.role}` }, s.role === "operator" ? "Operator" : "Viewer"));
+  const out = el("button", { class: "btn", type: "button", id: "sign-out" }, "Sign out");
+  out.addEventListener("click", async () => {
+    await api("/api/logout", {}).catch(() => {});
+    window.location.replace("/login");
+  });
+  tools.append(out);
+  if (s.role !== "operator") {
+    document.body.classList.add("viewer");
+    const controls = document.querySelector(".controls");
+    controls.querySelectorAll("button, input, select").forEach((n) => { n.disabled = true; });
+    controls.prepend(el("p", { class: "hint view-only-note" },
+      "View only: you signed in with the viewer PIN. The operator PIN unlocks the controls."));
+  }
+}
+
 async function init() {
   initTheme();
+  await initSession();
   document.querySelectorAll("[data-action]").forEach((b) => b.addEventListener("click", () => act(b.dataset.action)));
   $("load").addEventListener("input", (e) => { $("load-out").textContent = `${e.target.value} %`; });
   $("load").addEventListener("change", (e) => act("load", Number(e.target.value)));

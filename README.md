@@ -243,7 +243,7 @@ In a Codespace, a notification offers **Open in Browser** for port 8080 (or use 
 
 - The panel itself uses no IoT Hub messages; its buttons do what the keys do (and the keys still work).
 - **Access (solo):** the panel listens on 127.0.0.1 and the Codespace port is **Private** by default, so only you
-  (signed in to GitHub) can open it. Keep it private: there's no PIN yet (planned add-on for shareable links).
+  (signed in to GitHub) can open it. To let others in, see [Sharing the panel](#sharing-the-panel).
   Actions need the panel's own header and JSON body, so other websites can't trigger them.
 - Cloud view: `panel.api_url` in `config/default.yaml` (or `EMS_API_URL`); empty turns it off.
 - API key for the cloud view: the Codespace secret (or `.env` entry) `EMS_API_KEY`, one of the staging API's keys. Never put it in the YAML.
@@ -253,6 +253,37 @@ In a Codespace, a notification offers **Open in Browser** for port 8080 (or use 
 - Alerts box: this device's alerts, plus pipeline-wide ones marked **System:** (for example "Cloud processing slow"). The missing-telemetry label shows the window set in staging ("No telemetry for 5 min"); **Device offline** (from IoT Hub connect/disconnect events, after a 2-minute grace period) shows in red while active.
 - Connection: "What Azure holds" shows **Online** (green) or **Offline** (red) with the time of the last change, from the staging API's `link.connection_status`. Checks flags an Offline status that newer messages contradict.
 - Options: `--panel-port 8081`; `--panel-host 0.0.0.0` only inside a container (`docker run -p 8080:8080 …`).
+
+## Sharing the panel
+
+Give Paul or the team a link, with two levels of access:
+
+| PIN | Can |
+|---|---|
+| **Viewer** | Watch everything: gauges, faults, history, alerts, the cloud view. Controls are greyed out and refused by the panel |
+| **Operator** | Everything a viewer can, plus start/stop, load, faults, speed and scenarios. "Last actions" names the role behind each action |
+
+1. **Set the PINs once** as Codespace secrets (repo → Settings → Secrets and variables → **Codespaces**):
+   `EMS_PANEL_VIEWER_PIN` and `EMS_PANEL_OPERATOR_PIN`, at least 6 characters and different from each other.
+   Then stop and start the Codespace so it picks them up (`printenv EMS_PANEL_VIEWER_PIN | wc -c` should be more than 6).
+2. **Start the panel** as usual: `python cli.py run --interval 10 --panel`. The log says
+   "Panel sharing is on". Everyone, you included, now signs in on the panel's login page.
+3. **Make the port public:** Ports tab → right-click **8080** → **Port visibility** → **Public**.
+   (From your own computer instead: `gh codespace ports visibility 8080:public -c <codespace-name>`.)
+4. **Send the link:** `https://<codespace-name>-8080.app.github.dev`. It stays the same across stops and restarts of
+   this Codespace; it only changes if you create a new one. Send each person the PIN for their level separately.
+
+Good to know:
+- **The link works only while your Codespace runs and the simulator is started.** Codespaces stop after 30 minutes
+  without activity by default (a running simulator doesn't count). Raise it to up to 4 hours at
+  github.com → Settings → Codespaces → **Default idle timeout**. For a link that works around the clock, the plan is
+  to host the panel in Azure (stage 2).
+- **Check the port visibility after a restart**: it can go back to Private, and then visitors see a GitHub sign-in page.
+- **Sessions last 12 hours** and survive restarts. Five wrong PINs from one address lock it out for 5 minutes.
+- **To cut everyone off**, change either PIN (and restart the Codespace): all sessions end. To stop sharing, set the
+  port back to **Private**, or remove both secrets to return to solo mode.
+- Setting only one of the two PINs, a PIN under 6 characters or the same PIN twice stops the panel from starting,
+  with the reason in the log.
 
 ## Docker
 

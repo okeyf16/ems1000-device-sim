@@ -222,3 +222,17 @@ select { font: inherit; padding: 7px 8px; border-radius: 6px; border: 1px solid 
 }
 [data-theme="dark"] .chart .run { fill: rgba(73, 176, 115, .09); }
 [data-theme="dark"] .btn.go, [data-theme="dark"] .btn.stop { color: #0f1418; }
+
+/* ---- shared panel: sign-in page, role badge, view-only mode ---- */
+.login-page { min-height: 100vh; display: grid; place-items: center; padding: 16px; }
+.login-card { width: min(380px, 100%); background: var(--face); border: 1px solid var(--steel-dark); border-radius: 12px; padding: 24px; }
+.login-card h1 { margin: 0 0 8px; }
+.login-card form { display: grid; gap: 10px; margin-top: 12px; }
+.login-card input { font: inherit; font-size: 1.1rem; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--steel-dark); background: var(--input-bg); color: var(--ink); }
+.login-card input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.login-error { color: var(--bad); min-height: 1.2em; margin: 0; font-size: .92rem; }
+.role-badge { font-size: .8rem; font-weight: 700; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--steel-dark); white-space: nowrap; }
+.role-badge.viewer { color: var(--ink-soft); }
+.role-badge.operator { color: var(--ok); }
+.view-only-note { margin: 0 0 10px; }
+.viewer .controls button:disabled, .viewer .controls input:disabled, .viewer .controls select:disabled { opacity: .45; cursor: not-allowed; }
