@@ -32,7 +32,8 @@ def test_live_snapshot_has_everything_the_page_needs(tmp_path):
     timers.fire()
     live = p.live()
     assert live["state"] == "RUNNING" and live["run"] == 2
-    assert set(live["readings"]) == {"v", "i", "f", "fuel", "oil", "t", "vb", "rssi"}
+    assert set(live["readings"]) == {"v", "i", "f", "fuel", "oil", "t", "vb", "rssi", "load_pct", "soc_pct"}
+    assert 20 <= live["readings"]["load_pct"] <= 30 and live["soc_reliable"] is False
     assert live["load_pct"] == 25.0 and live["speed"] == 1.0 and live["interval"] == 60
     assert live["limits"]["overtemp_c"] == 95.0 and live["limits"]["min_start_v"] == 11.0
     assert live["events"][-1]["text"].startswith("start: 200 accepted")
@@ -81,7 +82,7 @@ def test_history_ring_buffer_and_since(tmp_path):
         p.sample()
     assert len(p.history) == HISTORY_POINTS
     first = p.history[0]
-    assert set(first) == {"ts", "run", "v", "f", "load", "fuel", "t", "vb"}
+    assert set(first) == {"ts", "run", "v", "f", "load", "fuel", "t", "vb", "soc"}
     assert p.history_points(since=p.history[-1]["ts"]) == []
 
 
@@ -117,15 +118,22 @@ def test_scenarios_list(tmp_path):
 
 # ---- cloud view ----------------------------------------------------------------------------
 
-def fake_api(state_ts_age=5, run=0, connection="Connected", twin_load=25.0, fail=False):
+def fake_api(state_ts_age=5, run=0, connection="Connected", twin_load=25.0, fail=False, old_shape=False):
     calls = []
 
     def fetch(url):
         calls.append(url)
         if fail:
             raise OSError("connection refused")
+        ts = int((time.time() - state_ts_age) * 1000)
         if url.endswith("/state"):
-            return {"device_id": "ems-sim-01", "state": {"ts": int((time.time() - state_ts_age) * 1000), "run": run}}
+            if old_shape:
+                return {"device_id": "ems-sim-01", "state": {"ts": ts, "run": run}}
+            return {"device_id": "ems-sim-01", "source": "stored", "readings": {"v": 0},
+                    "status": {"run": run, "run_state": "Off"}, "link": {"ts": ts}}
+        if "/api/alerts" in url:
+            return {"count": 1, "alerts": [{"id": "a1", "status": "active", "rule": "alert-missing-telemetry-stg",
+                                            "fired_at": "2026-11-18T23:00:00+01:00"}]}
         return {"connection_state": connection, "desired": {"$version": 2},
                 "reported": {"settings": {"load_pct": twin_load}}}
     return fetch, calls
@@ -137,9 +145,72 @@ def test_cloud_view_agrees_and_is_cached(tmp_path):
     c = p.cloud()
     assert c["configured"] and c["checks"] == []
     assert calls == ["https://api.example/api/devices/ems-sim-01/state",
-                     "https://api.example/api/devices/ems-sim-01/twin"]
+                     "https://api.example/api/devices/ems-sim-01/twin",
+                     "https://api.example/api/alerts?device_id=ems-sim-01&limit=20"]
+    assert c["alerts"]["alerts"][0]["id"] == "a1"
     p.cloud()
-    assert len(calls) == 2            # cached for 10 s
+    assert len(calls) == 3            # all cached
+
+
+def test_twin_read_less_often_than_state(tmp_path, monkeypatch):
+    fetch, calls = fake_api()
+    p, *_ = make_panel(tmp_path, fetch=fetch)
+    clock = [1000.0]
+    monkeypatch.setattr("sim.panel.server.time.monotonic", lambda: clock[0])
+    p.cloud()
+    clock[0] += 60                    # state (10 s) and alerts (30 s) expire, twin (120 s) doesn't
+    p.cloud()
+    assert sum(u.endswith("/twin") for u in calls) == 1
+    assert sum(u.endswith("/state") for u in calls) == 2
+    assert sum("/api/alerts" in u for u in calls) == 2
+
+
+def test_cloud_view_reads_older_api_shape(tmp_path):
+    fetch, _ = fake_api(old_shape=True, state_ts_age=600)
+    p, *_ = make_panel(tmp_path, fetch=fetch)
+    assert any("600 s old" in n or "s old" in n for n in p.cloud()["checks"])
+
+
+def test_cloud_view_explains_missing_key(tmp_path):
+    p, *_ = make_panel(tmp_path, fetch=lambda url: {"error": "HTTP 401", "status": 401})
+    assert "EMS_API_KEY" in p.cloud()["state"]["error"]
+
+
+def test_api_key_sent_as_header(monkeypatch):
+    import sim.panel.server as server
+    seen = {}
+
+    class Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+        def read(self):
+            return b"{}"
+
+    def fake_urlopen(req, timeout):
+        seen.update(dict(req.header_items()))
+        return Resp()
+
+    monkeypatch.setattr(server.urllib.request, "urlopen", fake_urlopen)
+    server._http_get_json("https://api.example/x", api_key="k1")
+    assert seen.get("X-api-key") == "k1"
+
+
+def test_history_holds_resting_battery_charge_while_running(tmp_path):
+    p, dev, timers, _ = make_panel(tmp_path)
+    p.sample()
+    rest = p.history[-1]["soc"]
+    p.action("start")
+    p.sample()                         # cranking: voltage dips, charge shouldn't
+    assert p.history[-1]["soc"] == rest
+
+
+def test_soc_estimate_curve():
+    from sim.panel.server import estimate_soc
+    assert estimate_soc(11.5) == 0 and estimate_soc(12.2) == 50 and estimate_soc(13.9) == 100
 
 
 def test_cloud_view_flags_differences(tmp_path):

@@ -27,6 +27,21 @@ pre-read). Section numbers match the spec: A1 goes with section 1, A2 with secti
 {"sv":1,"id":"ems-sim-01","ts":1794666969792,"boot":12,"seq":348,"v":218.5,"i":3.41,"f":51.12,"fuel":84.9,"oil":0,"t":68.7,"vb":13.8,"flt":0,"run":2,"rssi":-68}
 ```
 
+### The four non-reading fields
+
+Four fields aren't gauge readings, but the cloud depends on them:
+
+| Field | What it is | Values | Why it's needed |
+|---|---|---|---|
+| `sv` | Schema version of the message | `1` today | Lets the cloud read old and new firmware side by side when telemetry v2 arrives (predictive-maintenance summaries). Without it, a format change breaks every deployed unit |
+| `flt` | Fault and warning bitmask | Bits 0–3 latched faults: 0 low oil, 1 low fuel, 2 over-temperature, 3 low starter battery. Bits 4–5 warnings: 4 voltage, 5 frequency out of range. `0` = all clear; e.g. `48` = voltage + frequency warnings | Drives the start pre-check, the fault lockout, alerts, the app's "why won't it start?" card and the panel lamps. The API decodes it into `faults` and `warnings` |
+| `boot` | Restart counter: +1 at every power-up, kept in flash (NVS) | 1, 2, 3, … | With `seq` it makes each message unique, which is how the cloud drops duplicates; a `seq` gap within one boot means lost messages; frequent boots point to power or brown-out problems |
+| `rssi` | Mobile signal strength in dBm | About −50 (excellent) to −110 (unusable); below about −100 expect drop-outs | Explains why a unit goes offline, warns before it goes silent, and helps choose where to mount it |
+
+`seq` (message counter, back to 1 at each boot) and `ts` (device clock, Unix epoch in
+milliseconds, UTC, after SNTP sync) complete the set. The device always sends UTC; the API,
+panel and app show West Africa Time (UTC+1).
+
 ## A4. Direct methods
 
 | Purpose | Topic |

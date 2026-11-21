@@ -14,6 +14,7 @@ trigger actions. A PIN for shareable links is a later add-on.
 from __future__ import annotations
 
 import collections
+import functools
 import json
 import logging
 import mimetypes
@@ -36,7 +37,23 @@ ACTION_HEADER = "X-EMS-Panel"
 MAX_BODY = 4096
 HISTORY_POINTS = 900          # 30 min at one point every 2 s
 HISTORY_EVERY_S = 2.0
-CLOUD_CACHE_S = 10.0
+# Cloud view refresh: the stored state and alerts are table reads (free); twin reads count
+# against the IoT Hub's 8,000 daily messages, so the twin is read far less often.
+CLOUD_TTL_S = {"state": 10.0, "alerts": 30.0, "twin": 120.0}
+
+# 12 V lead-acid state of charge from resting voltage (estimate); same curve as the API.
+_SOC_POINTS = [(11.8, 0), (12.0, 25), (12.2, 50), (12.4, 75), (12.5, 90), (12.7, 100)]
+
+
+def estimate_soc(vb: float) -> int:
+    if vb <= _SOC_POINTS[0][0]:
+        return 0
+    if vb >= _SOC_POINTS[-1][0]:
+        return 100
+    for (v1, s1), (v2, s2) in zip(_SOC_POINTS, _SOC_POINTS[1:], strict=False):
+        if v1 <= vb <= v2:
+            return round(s1 + (s2 - s1) * (vb - v1) / (v2 - v1))
+    return 0
 
 FLT_TEXT = [
     (FAULT_LOW_OIL, "Low oil (fault)"),
@@ -57,7 +74,7 @@ class Panel:
     """State and actions behind the web page. Also usable without HTTP (tests)."""
 
     def __init__(self, controls: Controls, stop_event: threading.Event, api_url: str | None = None,
-                 runner: ScenarioRunner | None = None, fetch=None):
+                 runner: ScenarioRunner | None = None, fetch=None, api_key: str | None = None):
         self.controls = controls
         self.device = controls.device
         self.stop_event = stop_event
@@ -65,8 +82,10 @@ class Panel:
         self.runner = runner
         self.history: collections.deque = collections.deque(maxlen=HISTORY_POINTS)
         self.events: collections.deque = collections.deque(maxlen=50)   # action log shown on the page
-        self._fetch = fetch or _http_get_json
-        self._cloud_cache: tuple[float, dict] | None = None
+        self.api_key = api_key or None
+        self._fetch = fetch or functools.partial(_http_get_json, api_key=self.api_key)
+        self._cloud_parts: dict[str, tuple[float, dict]] = {}
+        self._rest_soc: int | None = None   # battery charge last measured with the engine off
         self._lock = threading.Lock()
 
     # ---- read ------------------------------------------------------------------------
@@ -84,7 +103,12 @@ class Panel:
             "warnings": [WARNING_TEXT.get(w, w) for w in sorted(m.warnings)],
             "breaker_tripped": extras["breaker_tripped"],
             "readings": {"v": r.v, "i": r.i, "f": r.f, "fuel": r.fuel, "oil": r.oil, "t": r.t,
-                         "vb": r.vb, "rssi": r.rssi},
+                         "vb": r.vb, "rssi": r.rssi,
+                         # load as measured (current vs rated), like the API; the slider's
+                         # setting is the top-level load_pct
+                         "load_pct": round(r.i / m.rated_a * 100, 1) if m.rated_a else 0.0,
+                         "soc_pct": estimate_soc(r.vb)},
+            "soc_reliable": run in (0, 4),   # cranking/running skews battery voltage
             "load_pct": extras["load_pct"], "fuel_l": extras["fuel_l"], "fuel_l_per_h": extras["fuel_l_per_h"],
             "overheat": m.overheat, "weak_battery": m.weak_battery,
             "speed": d.speed, "interval": d.interval, "seq": d.seq, "boot": d.boot,
@@ -103,8 +127,11 @@ class Panel:
         d, m = self.device, self.device.model
         run = int(d.generator.state)
         r = m.read(run)
+        if run in (0, 4) or self._rest_soc is None:   # engine off: voltage tells the charge
+            self._rest_soc = estimate_soc(r.vb)
         self.history.append({"ts": int(time.time() * 1000), "run": run, "v": r.v, "f": r.f,
-                             "load": round(m.load * 100, 1), "fuel": r.fuel, "t": r.t, "vb": r.vb})
+                             "load": round(m.load * 100, 1), "fuel": r.fuel, "t": r.t, "vb": r.vb,
+                             "soc": self._rest_soc})
 
     def history_points(self, since: int = 0) -> list[dict]:
         return [p for p in list(self.history) if p["ts"] > since]
@@ -117,43 +144,56 @@ class Panel:
                         "steps": len(sc.steps)})
         return out
 
+    def _cloud_part(self, key: str, path: str, now: float) -> dict:
+        with self._lock:
+            hit = self._cloud_parts.get(key)
+            if hit and now - hit[0] < CLOUD_TTL_S[key]:
+                return hit[1]
+        try:
+            value = self._fetch(self.api_url + path)
+        except Exception as err:  # noqa: BLE001 - shown on the page
+            value = {"error": str(getattr(err, "reason", None) or err)}
+        if isinstance(value, dict) and value.get("status") == 401:
+            value = {"error": "API key missing or wrong: set the EMS_API_KEY secret", "status": 401}
+        with self._lock:
+            self._cloud_parts[key] = (now, value)
+        return value
+
     def cloud(self) -> dict:
-        """The staging API's view: /state and /twin, cached for 10 s."""
+        """The staging API's view: stored /state (10 s), alerts (30 s) and the twin (120 s)."""
         if not self.api_url:
             return {"configured": False}
         now = time.monotonic()
-        with self._lock:
-            if self._cloud_cache and now - self._cloud_cache[0] < CLOUD_CACHE_S:
-                return self._cloud_cache[1]
         dev = self.device.device_id
-        out: dict = {"configured": True, "api_url": self.api_url, "fetched_at": int(time.time() * 1000)}
-        for key, path in (("state", f"/api/devices/{dev}/state"), ("twin", f"/api/devices/{dev}/twin")):
-            try:
-                out[key] = self._fetch(self.api_url + path)
-            except Exception as err:  # noqa: BLE001 - shown on the page
-                out[key] = {"error": str(getattr(err, "reason", None) or err)}
+        out: dict = {"configured": True, "api_url": self.api_url, "fetched_at": int(time.time() * 1000),
+                     "key_set": bool(self.api_key)}
+        out["state"] = self._cloud_part("state", f"/api/devices/{dev}/state", now)
+        out["twin"] = self._cloud_part("twin", f"/api/devices/{dev}/twin", now)
+        out["alerts"] = self._cloud_part("alerts", f"/api/alerts?device_id={dev}&limit=20", now)
         failed = [k for k in ("state", "twin") if isinstance(out.get(k), dict) and "error" in out[k]]
         out["checks"] = ([f"Couldn't read {' and '.join(failed)} from the staging API, so device and cloud "
                           "can't be fully compared"] if failed else []) + self._compare(out)
-        with self._lock:
-            self._cloud_cache = (now, out)
         return out
 
     def _compare(self, cloud: dict) -> list[str]:
         """Plain-words differences between the device and the cloud."""
         notes = []
         resp = cloud.get("state") or {}
-        tel = resp.get("state") if isinstance(resp.get("state"), dict) else None   # API: {"device_id", "state": {...}}
-        if tel:
-            ts = tel.get("ts")
-            if isinstance(ts, int | float):
-                age = time.time() - ts / 1000
-                if age > 2 * max(self.device.interval, 1) + 15:
-                    notes.append(f"Cloud's last message is {age:.0f} s old (heartbeat every "
-                                 f"{self.device.interval} s): telemetry may not be arriving")
-            if "run" in tel and tel["run"] != int(self.device.generator.state):
-                notes.append(f"Cloud state run={tel['run']} differs from device run="
-                             f"{int(self.device.generator.state)} (normal for a few seconds after a change)")
+        if isinstance(resp.get("status"), dict):          # API since PR #14: readings/status/link
+            ts = (resp.get("link") or {}).get("ts")
+            run = resp["status"].get("run")
+        elif isinstance(resp.get("state"), dict):         # older API: {"device_id", "state": {...}}
+            ts, run = resp["state"].get("ts"), resp["state"].get("run")
+        else:
+            ts = run = None
+        if isinstance(ts, int | float):
+            age = time.time() - ts / 1000
+            if age > 2 * max(self.device.interval, 1) + 15:
+                notes.append(f"Cloud's last message is {age:.0f} s old (heartbeat every "
+                             f"{self.device.interval} s): telemetry may not be arriving")
+        if run is not None and run != int(self.device.generator.state):
+            notes.append(f"Cloud state run={run} differs from device run="
+                         f"{int(self.device.generator.state)} (normal for a few seconds after a change)")
         twin = cloud.get("twin") or {}
         if "connection_state" in twin and twin["connection_state"] != "Connected":
             notes.append(f"IoT Hub reports the device as {twin['connection_state']}")
@@ -209,8 +249,11 @@ class Panel:
         return t
 
 
-def _http_get_json(url: str) -> dict:
-    req = urllib.request.Request(url, headers={"Accept": "application/json"})
+def _http_get_json(url: str, api_key: str | None = None) -> dict:
+    headers = {"Accept": "application/json"}
+    if api_key:
+        headers["X-API-Key"] = api_key
+    req = urllib.request.Request(url, headers=headers)
     try:
         with urllib.request.urlopen(req, timeout=8) as resp:  # noqa: S310 - URL from config
             return json.loads(resp.read().decode("utf-8"))

@@ -28,6 +28,7 @@ class SimConfig:
     state_dir: Path = Path(".state")
     panel_port: int = 8080
     panel_api_url: str | None = None   # staging API for the panel's cloud view
+    panel_api_key: str | None = None   # X-API-Key for that API (env EMS_API_KEY only, never in YAML)
 
 
 def load_config(path: str | Path | None = None) -> SimConfig:
@@ -56,6 +57,7 @@ def load_config(path: str | Path | None = None) -> SimConfig:
         state_dir=Path(raw.get("state_dir", ".state")),
         panel_port=int((raw.get("panel") or {}).get("port", 8080)),
         panel_api_url=os.getenv("EMS_API_URL") or (raw.get("panel") or {}).get("api_url") or None,
+        panel_api_key=os.getenv("EMS_API_KEY") or None,
     )
 
 
