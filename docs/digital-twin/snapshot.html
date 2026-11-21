@@ -110,6 +110,7 @@ html,body,.schem,.tile,.box,.st{transition:background-color .25s,color .25s,bord
 <svg id="sch" viewBox="0 0 700 494" width="700" height="494">
   <defs>
     <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#2F6DB5"/></marker>
+    <marker id="arC" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0L10 5L0 10z" fill="#8FA3A0"/></marker>
   </defs>
   <!-- power lines (base) -->
   <g fill="none" stroke="#C9D2CE" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
@@ -212,6 +213,18 @@ html,body,.schem,.tile,.box,.st{transition:background-color .25s,color .25s,bord
   </g>
   <text x="140" y="306" font-size="11.5" fill="#4E6A70">start</text>
   <text x="62" y="306" font-size="11.5" fill="#4E6A70">stop</text>
+  <!-- mobile app: commands go app -> API -> IoT Hub -> device (direct methods) -->
+  <g id="phoneG">
+    <text x="560" y="182" font-size="12.5" font-weight="600" fill="#14303A">Mobile app</text>
+    <text x="560" y="195" font-size="11" fill="#4E6A70">via API, IoT Hub</text>
+    <rect x="572" y="210" width="30" height="54" rx="5" fill="#F7F8F5" stroke="#14303A" stroke-width="1.5"/>
+    <rect id="phScreen" x="575" y="216" width="24" height="40" rx="1.5" fill="#C9D2CE"/>
+    <text id="phTxt" x="587" y="239" font-size="8" font-weight="700" fill="#14303A" text-anchor="middle">EMS</text>
+    <circle cx="587" cy="260" r="1.6" fill="#14303A"/>
+  </g>
+  <path id="cmdLine" d="M587 268V318" fill="none" stroke="#8FA3A0" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#arC)"/>
+  <text id="cmdLbl" x="580" y="300" font-size="11.5" fill="#4E6A70" text-anchor="end">commands</text>
+  <circle id="cmdPk" cx="587" cy="268" r="5" fill="#D98E04" opacity="0"/>
   <!-- uplink -->
   <path id="uplink" d="M640 320V200" fill="none" stroke="#2F6DB5" stroke-width="2" stroke-dasharray="5 4" marker-end="url(#ar)"/>
   <text x="648" y="226" font-size="12" fill="#2F6DB5">MQTT to</text>
@@ -262,14 +275,16 @@ const LOOP=24;
 const EVENTS=[
  [0,'Grid supplying the site; inverter charging the battery'],
  [3,'Grid lost: inverter carries the load from the battery'],
+ [4.2,'Start command sent from the mobile app (API, then IoT Hub direct method)'],
  [5,'Firmware closes the start relay: cranking, attempt 1'],
  [7,'Attempt 1 failed: battery sagged to 9.8 V under crank'],
+ [8.2,'Start command sent again from the app'],
  [9,'Attempt 2: cranking'],
  [10.2,'Generator running: changeover to generator, battery recharging'],
  [14.4,'Oil pressure switch flickering'],
  [15.6,'Low oil pressure: firmware opens the stop relay'],
  [16.6,'Generator in Fault; flag bit 0 set in telemetry'],
- [18,'Staging raises the alert; panel shows it'],
+ [18,'Staging raises the alert; panel and mobile app show it'],
  [20,'Checker compares both paths with the expected result'],
 ];
 const MARKS=[[3,'Grid lost'],[5,'Start 1'],[7,'Crank failed'],[9,'Start 2'],[10.2,'Running'],[15.6,'Low oil'],[18,'Alert'],[20,'Verdict']];
@@ -326,6 +341,14 @@ function render(t){
   $('espState').textContent='state: '+NAMES[s.run]+(s.flt?`, flags ${s.flt}`:'');
   const seq=412+Math.floor(t/2); $('espSeq').textContent='seq '+seq;
   const ph=(t%2)/2; const pk=$('packet'); pk.setAttribute('cy',320-120*ph); pk.setAttribute('opacity',ph<0.9?1:0);
+  // mobile app: command packet travels down to the ESP32; screen shows command or alert
+  const cmd=(t>=4.2&&t<5)?(t-4.2)/0.8:((t>=8.2&&t<9)?(t-8.2)/0.8:-1);
+  const cp=$('cmdPk'); if(cmd>=0){cp.setAttribute('cy',268+48*cmd);cp.setAttribute('opacity',1);}else cp.setAttribute('opacity',0);
+  const cl=$('cmdLine'); cl.setAttribute('stroke',cmd>=0?'#D98E04':'#8FA3A0'); cl.style.strokeDashoffset=cmd>=0?(-t*40%18):0;
+  const pt=$('phTxt'), ps=$('phScreen');
+  if(t>=18){pt.textContent='ALERT';ps.setAttribute('fill','#C2362B');pt.setAttribute('fill','#F7F8F5');}
+  else if(cmd>=0){pt.textContent='START';ps.setAttribute('fill','#D98E04');pt.setAttribute('fill','#14303A');}
+  else {pt.textContent=NAMES[s.run].slice(0,4).toUpperCase();ps.setAttribute('fill','#C9D2CE');pt.setAttribute('fill','#14303A');}
   // telemetry lines every 2 s
   const lines=[]; for(let k=Math.floor(t/2);k>Math.floor(t/2)-4&&k>=0;k--){const tt=k*2+0.01, q=S(tt);
     const fl=q.flt?`<b>${q.flt}</b>`:'0';

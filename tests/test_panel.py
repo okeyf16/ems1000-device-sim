@@ -146,10 +146,12 @@ def test_cloud_view_agrees_and_is_cached(tmp_path):
     assert c["configured"] and c["checks"] == []
     assert calls == ["https://api.example/api/devices/ems-sim-01/state",
                      "https://api.example/api/devices/ems-sim-01/twin",
-                     "https://api.example/api/alerts?device_id=ems-sim-01&limit=20"]
+                     "https://api.example/api/alerts?device_id=ems-sim-01&limit=20",
+                     "https://api.example/api/alerts?device_id=_system&limit=10"]
     assert c["alerts"]["alerts"][0]["id"] == "a1"
+    assert "alerts" in c["system_alerts"]
     p.cloud()
-    assert len(calls) == 3            # all cached
+    assert len(calls) == 4            # all cached
 
 
 def test_twin_read_less_often_than_state(tmp_path, monkeypatch):
@@ -162,7 +164,7 @@ def test_twin_read_less_often_than_state(tmp_path, monkeypatch):
     p.cloud()
     assert sum(u.endswith("/twin") for u in calls) == 1
     assert sum(u.endswith("/state") for u in calls) == 2
-    assert sum("/api/alerts" in u for u in calls) == 2
+    assert sum("/api/alerts" in u for u in calls) == 4   # device + system alerts, twice
 
 
 def test_cloud_view_reads_older_api_shape(tmp_path):
