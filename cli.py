@@ -26,6 +26,7 @@ from sim.config import connection_string_for, load_config
 from sim.controls import Controls
 from sim.device import VirtualDevice
 from sim.keyboard import start_keyboard
+from sim.panel.auth import Access, AccessError
 from sim.panel.server import Panel, serve
 from sim.scenario import ScenarioRunner, available, load_scenario, start_scenario
 from sim.transport import AzureSdkTransport, DryRunTransport
@@ -90,8 +91,11 @@ def cmd_run(args) -> int:
         start_scenario(runner)
     if args.panel:
         try:
+            access = Access.from_env()   # viewer/operator PINs for sharing; solo if unset
             serve(Panel(controls, stop, cfg.panel_api_url, runner, api_key=cfg.panel_api_key), args.panel_host,
-                  args.panel_port or cfg.panel_port)
+                  args.panel_port or cfg.panel_port, access)
+        except AccessError as err:
+            logging.error("Web panel not started: %s", err)
         except OSError as err:
             logging.error("Web panel could not start on port %s: %s", args.panel_port or cfg.panel_port, err)
     while any(t.is_alive() for t in threads):

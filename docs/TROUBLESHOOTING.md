@@ -28,6 +28,12 @@ Problems met while building the EMS-1000 staging pipeline, by symptom. Pipeline:
 | *What Azure holds* says "API key missing or wrong" or "No API key" | `EMS_API_KEY` not set, or an old key after rotation | Add or update the Codespace secret `EMS_API_KEY` (staging output `api_keys`), then restart the Codespace or the simulator |
 | *What Azure holds* shows HTTP errors | Staging API down, quota exceeded (403), or wrong `panel.api_url` | Open the API's `/docs`; App Service quotas (see README); check the URL |
 | Cloud view says the last message is old | Telemetry isn't reaching Azure | See *Telemetry doesn't arrive* below |
+| "Web panel not started: Set both EMS_PANEL_VIEWER_PIN and …" | Only one PIN secret set, a PIN under 6 characters, or both the same | Fix the Codespace secrets, restart the Codespace, start the sim again |
+| A visitor sees a GitHub sign-in page instead of the panel's PIN page | Port 8080 is Private (it can reset after a restart) | Ports tab → right-click 8080 → **Port visibility** → **Public** |
+| The shared link doesn't load at all | Your Codespace stopped (idle timeout) or the sim isn't running with `--panel` | Start the Codespace and the sim; raise the idle timeout (README, *Sharing the panel*) |
+| "Too many wrong PINs. Try again in N s." | Five wrong PINs from that address in 5 minutes | Wait it out; check the PIN you sent them |
+| Controls are greyed out | Signed in with the viewer PIN | **Sign out**, sign in with the operator PIN |
+| Everyone was signed out | A PIN changed (sessions are tied to the PINs) or 12 h passed | Sign in again |
 
 ## Telemetry doesn't arrive
 

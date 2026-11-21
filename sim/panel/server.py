@@ -4,11 +4,12 @@ Python's built-in HTTP server, JSON endpoints and three static files. No IoT Hub
 messages are used by the panel itself; its buttons go through the same local
 controls as the keyboard shortcuts.
 
-Access (solo version): listens on 127.0.0.1 by default and is reached through the
-Codespace's private forwarded port, so only you can open it. Every action needs the
-`X-EMS-Panel` header and a JSON body: browsers won't let another website send those
-without a CORS preflight, which this server never approves, so other sites can't
-trigger actions. A PIN for shareable links is a later add-on.
+Access: solo by default (127.0.0.1, reached through the Codespace's private forwarded
+port). Set EMS_PANEL_VIEWER_PIN and EMS_PANEL_OPERATOR_PIN to share it: then every page
+and API call needs a session from the login page (see auth.py), viewers are read-only
+and only operators can use the controls. Every write also needs the `X-EMS-Panel`
+header and a JSON body: browsers won't let another website send those without a CORS
+preflight, which this server never approves, so other sites can't trigger actions.
 """
 
 from __future__ import annotations
@@ -29,11 +30,14 @@ from pathlib import Path
 from ..controls import ACTION_NAMES, Controls
 from ..physics import ALERT_FREQUENCY, ALERT_VOLTAGE, FAULT_LOW_BATTERY, FAULT_LOW_FUEL, FAULT_LOW_OIL, FAULT_OVER_TEMP
 from ..scenario import ScenarioRunner, available, load_scenario, start_scenario
+from .auth import COOKIE, OPERATOR, Access, cookie_value
 
 log = logging.getLogger(__name__)
 
 STATIC = Path(__file__).resolve().parent / "static"
-STATIC_FILES = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/style.css": "style.css"}
+STATIC_FILES = {"/": "index.html", "/index.html": "index.html", "/app.js": "app.js", "/style.css": "style.css",
+                "/login": "login.html", "/login.js": "login.js"}
+PUBLIC_FILES = {"/login", "/login.js", "/style.css"}   # reachable without a session when sharing
 ACTION_HEADER = "X-EMS-Panel"
 MAX_BODY = 4096
 HISTORY_POINTS = 900          # 30 min at one point every 2 s
@@ -221,15 +225,15 @@ class Panel:
         self.events.append({"ts": int(time.time() * 1000), "text": text})
         log.info("[panel] %s", text)
 
-    def action(self, name: str, value=None) -> dict:
+    def action(self, name: str, value=None, actor: str | None = None) -> dict:
         if name not in ACTION_NAMES:
             raise ValueError(f"unknown action {name!r}")
         result = self.controls.do(name, value)
         label = name + (f" {value}" if value is not None else "")
-        self._log(f"{label}: {result}")
+        self._log(f"{_by(actor)}{label}: {result}")
         return {"ok": True, "action": name, "result": result}
 
-    def start_scenario(self, name: str) -> dict:
+    def start_scenario(self, name: str, actor: str | None = None) -> dict:
         if self.runner and self.runner.running:
             raise ValueError(f"scenario '{self.runner.scenario.name}' is already running; stop it first")
         sc = load_scenario(name)        # ValueError if unknown
@@ -237,14 +241,14 @@ class Panel:
             self.device.speed = sc.speed
         self.runner = ScenarioRunner(sc, self.controls, self.stop_event)
         start_scenario(self.runner)
-        self._log(f"scenario {name} started (speed {self.device.speed:g}x)")
+        self._log(f"{_by(actor)}scenario {name} started (speed {self.device.speed:g}x)")
         return {"ok": True, "scenario": self.runner.progress()}
 
-    def stop_scenario(self) -> dict:
+    def stop_scenario(self, actor: str | None = None) -> dict:
         if not self.runner or not self.runner.running:
             return {"ok": True, "result": "no scenario running"}
         self.runner.cancel()
-        self._log(f"scenario {self.runner.scenario.name} stop requested")
+        self._log(f"{_by(actor)}scenario {self.runner.scenario.name} stop requested")
         return {"ok": True, "result": "stopping"}
 
     # ---- background ------------------------------------------------------------------
@@ -259,6 +263,11 @@ class Panel:
         t = threading.Thread(target=loop, name="panel-history", daemon=True)
         t.start()
         return t
+
+
+def _by(actor: str | None) -> str:
+    """'[operator] ' prefix for the action log when the panel is shared."""
+    return f"[{actor}] " if actor else ""
 
 
 def _parse_iso(value) -> float | None:
@@ -286,13 +295,14 @@ def _http_get_json(url: str, api_key: str | None = None) -> dict:
 # ---- HTTP ---------------------------------------------------------------------------------
 
 class _Handler(BaseHTTPRequestHandler):
-    panel: Panel  # set on the subclass made in serve()
+    panel: Panel     # set on the subclass made in serve()
+    access: Access   # sharing settings (solo when no PINs)
     server_version = "EMSPanel/1"
 
     def log_message(self, fmt, *args):  # quiet; actions are logged by Panel
         log.debug("panel http: " + fmt, *args)
 
-    def _send(self, status: int, body: bytes, ctype: str) -> None:
+    def _send(self, status: int, body: bytes, ctype: str, extra: dict | None = None) -> None:
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
@@ -303,21 +313,58 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Security-Policy",
                          "default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; "
                          "connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'")
+        for key, value in (extra or {}).items():
+            self.send_header(key, value)
         self.end_headers()
         self.wfile.write(body)
 
-    def _json(self, status: int, data) -> None:
-        self._send(status, json.dumps(data).encode("utf-8"), "application/json")
+    def _json(self, status: int, data, extra: dict | None = None) -> None:
+        self._send(status, json.dumps(data).encode("utf-8"), "application/json", extra)
 
+    def _redirect(self, where: str) -> None:
+        self._send(302, b"", "text/plain", {"Location": where})
+
+    # ---- sessions ----------------------------------------------------------------------
+    def _role(self) -> str | None:
+        """operator in solo mode; otherwise the role in a valid session cookie, or None."""
+        if not self.access.sharing:
+            return OPERATOR
+        return self.access.role_of(cookie_value(self.headers.get("Cookie")))
+
+    def _client(self) -> str:
+        # Codespaces forwards through a proxy that appends the visitor's address to
+        # X-Forwarded-For; take the last entry (earlier ones could be set by the visitor)
+        forwarded = (self.headers.get("X-Forwarded-For") or "").split(",")[-1].strip()
+        return forwarded or self.client_address[0]
+
+    def _cookie(self, value: str, max_age: int) -> dict:
+        secure = "; Secure" if (self.headers.get("X-Forwarded-Proto") or "").lower() == "https" else ""
+        return {"Set-Cookie": f"{COOKIE}={value}; Max-Age={max_age}; Path=/; HttpOnly; SameSite=Strict{secure}"}
+
+    def _actor(self, role: str) -> str | None:
+        return role if self.access.sharing else None
+
+    # ---- GET ----------------------------------------------------------------------------
     def do_GET(self):  # noqa: N802
         path, _, query = self.path.partition("?")
+        role = self._role()
+        if path == "/login" and (not self.access.sharing or role):
+            return self._redirect("/")
         if path in STATIC_FILES:
+            if role is None and path not in PUBLIC_FILES:
+                return self._redirect("/login")
             f = STATIC / STATIC_FILES[path]
             ctype = mimetypes.guess_type(f.name)[0] or "application/octet-stream"
+            if f.suffix == ".html":
+                ctype = "text/html"
             return self._send(200, f.read_bytes(), ctype + ("; charset=utf-8" if ctype.startswith("text") or
                                                              ctype.endswith("javascript") else ""))
+        if path.startswith("/api/") and role is None:
+            return self._json(401, {"error": "login required", "login": "/login"})
         p = self.panel
         try:
+            if path == "/api/session":
+                return self._json(200, {"sharing": self.access.sharing, "role": role})
             if path == "/api/live":
                 return self._json(200, p.live())
             if path == "/api/history":
@@ -334,6 +381,7 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json(400, {"error": str(err)})
         return self._json(404, {"error": "not found"})
 
+    # ---- POST ---------------------------------------------------------------------------
     def do_POST(self):  # noqa: N802
         if self.headers.get(ACTION_HEADER) != "1":
             return self._json(403, {"error": f"missing {ACTION_HEADER} header"})
@@ -348,30 +396,63 @@ class _Handler(BaseHTTPRequestHandler):
                 raise ValueError("body must be a JSON object")
         except ValueError as err:
             return self._json(400, {"error": f"bad JSON: {err}"})
-        p = self.panel
+
+        if self.path == "/api/login":
+            return self._login(body)
+        if self.path == "/api/logout":
+            return self._json(200, {"ok": True}, self._cookie("", 0))
+
+        role = self._role()
+        if role is None:
+            return self._json(401, {"error": "login required", "login": "/login"})
+        if role != OPERATOR:
+            return self._json(403, {"error": "View only: sign in with the operator PIN to use the controls"})
+        p, actor = self.panel, self._actor(role)
         try:
             if self.path == "/api/action":
-                return self._json(200, p.action(str(body.get("action", "")), body.get("value")))
+                return self._json(200, p.action(str(body.get("action", "")), body.get("value"), actor))
             if self.path == "/api/scenario/start":
-                return self._json(200, p.start_scenario(str(body.get("name", ""))))
+                return self._json(200, p.start_scenario(str(body.get("name", "")), actor))
             if self.path == "/api/scenario/stop":
-                return self._json(200, p.stop_scenario())
+                return self._json(200, p.stop_scenario(actor))
         except (ValueError, TypeError) as err:
             return self._json(400, {"ok": False, "error": str(err)})
         return self._json(404, {"error": "not found"})
+
+    def _login(self, body: dict) -> None:
+        if not self.access.sharing:
+            return self._json(200, {"ok": True, "role": OPERATOR, "sharing": False})
+        client = self._client()
+        wait = self.access.locked_for(client)
+        if wait:
+            return self._json(429, {"error": f"Too many wrong PINs. Try again in {wait} s."},
+                              {"Retry-After": str(wait)})
+        role = self.access.login(str(body.get("pin", "")), client)
+        if role is None:
+            log.warning("[panel] wrong PIN from %s", client)
+            return self._json(401, {"error": "Wrong PIN"})
+        self.panel._log(f"[{role}] signed in")
+        return self._json(200, {"ok": True, "role": role},
+                          self._cookie(self.access.issue(role), self.access.session_s))
 
     def do_OPTIONS(self):  # noqa: N802 - never approve cross-origin requests
         self._json(403, {"error": "cross-origin requests are not allowed"})
 
 
-def serve(panel: Panel, host: str = "127.0.0.1", port: int = 8080) -> ThreadingHTTPServer:
-    handler = type("PanelHandler", (_Handler,), {"panel": panel})
+def serve(panel: Panel, host: str = "127.0.0.1", port: int = 8080,
+          access: Access | None = None) -> ThreadingHTTPServer:
+    access = access or Access()
+    handler = type("PanelHandler", (_Handler,), {"panel": panel, "access": access})
     httpd = ThreadingHTTPServer((host, port), handler)
     httpd.daemon_threads = True
     threading.Thread(target=httpd.serve_forever, name="panel-http", daemon=True).start()
     panel.start_sampler()
     log.info("Web panel on http://%s:%d  (Codespaces: Ports tab -> 8080 -> Open in Browser)",
              "localhost" if host in ("127.0.0.1", "0.0.0.0") else host, httpd.server_address[1])
-    if host not in ("127.0.0.1", "localhost", "::1"):
-        log.warning("Web panel listens on %s with no PIN yet: only expose it on a network you trust", host)
+    if access.sharing:
+        log.info("Panel sharing is on: sign-in required (viewer PIN = read-only, operator PIN = controls). "
+                 "To share, set port 8080 to Public in the Ports tab and send the link.")
+    elif host not in ("127.0.0.1", "localhost", "::1"):
+        log.warning("Web panel listens on %s with no PINs: set EMS_PANEL_VIEWER_PIN and "
+                    "EMS_PANEL_OPERATOR_PIN before exposing it", host)
     return httpd
