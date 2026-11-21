@@ -310,9 +310,14 @@ function ago(ms) {
   return s < 90 ? `${s} s ago` : `${Math.round(s / 60)} min ago`;
 }
 const RUN_NAMES = ["Off", "Cranking", "Running", "Stopping", "Fault"];
-function ruleName(rule) {
+function ruleName(a) {
+  const rule = (a && a.rule) || "";
   if (!rule) return "Alert";
-  if (rule.includes("missing-telemetry")) return "No telemetry for 15 min";
+  if (rule.includes("missing-telemetry")) {
+    // The window comes from the alert's own description, so it follows the Terraform setting.
+    const m = /last (\d+) minutes?/.exec((a && a.description) || "");
+    return m ? `No telemetry for ${m[1]} min` : "No telemetry received";
+  }
   if (rule.includes("latency")) return "Cloud processing slow";
   return rule;
 }
@@ -355,20 +360,28 @@ function renderCloud(c) {
 
   host.append(el("h3", {}, "Alerts"));
   const al = c.alerts || {};
+  const sys = c.system_alerts || {};
   if (al.error) host.append(el("p", { class: "hint" }, `Couldn't read alerts: ${al.error}`));
   else {
-    const list = al.alerts || [];
-    const active = list.filter((a) => a.status === "active");
-    const resolved = list.filter((a) => a.status !== "active").slice(0, 3);
-    const ul = el("ul", { class: "alerts" });
-    for (const a of active) {
-      ul.append(el("li", { class: "tag bad" }, `${ruleName(a.rule)} since ${a.fired_at ? watDay(Date.parse(a.fired_at)) : "–"}`));
+    const items = [];
+    const add = (list, prefix, nResolved) => {
+      const active = list.filter((a) => a.status === "active");
+      const resolved = list.filter((a) => a.status !== "active").slice(0, nResolved);
+      for (const a of active) {
+        items.push(el("li", { class: "tag bad" }, `${prefix}${ruleName(a)} since ${a.fired_at ? watDay(Date.parse(a.fired_at)) : "–"}`));
+      }
+      for (const a of resolved) {
+        items.push(el("li", { class: "tag ok" }, `${prefix}${ruleName(a)}: resolved ${a.resolved_at ? watDay(Date.parse(a.resolved_at)) : ""}`));
+      }
+    };
+    add(al.alerts || [], "", 3);
+    if (!sys.error) add(sys.alerts || [], "System: ", 1);   // no device: affects the whole pipeline
+    if (!items.length) host.append(el("p", { class: "allgood" }, "No alerts."));
+    else {
+      const ul = el("ul", { class: "alerts" });
+      ul.append(...items);
+      host.append(ul);
     }
-    for (const a of resolved) {
-      ul.append(el("li", { class: "tag ok" }, `${ruleName(a.rule)}: resolved ${a.resolved_at ? watDay(Date.parse(a.resolved_at)) : ""}`));
-    }
-    if (!list.length) host.append(el("p", { class: "allgood" }, "No alerts."));
-    else host.append(ul);
   }
 
   host.append(el("h3", {}, "Checks"));

@@ -39,7 +39,7 @@ HISTORY_POINTS = 900          # 30 min at one point every 2 s
 HISTORY_EVERY_S = 2.0
 # Cloud view refresh: the stored state and alerts are table reads (free); twin reads count
 # against the IoT Hub's 8,000 daily messages, so the twin is read far less often.
-CLOUD_TTL_S = {"state": 10.0, "alerts": 30.0, "twin": 120.0}
+CLOUD_TTL_S = {"state": 10.0, "alerts": 30.0, "system_alerts": 30.0, "twin": 120.0}
 
 # 12 V lead-acid state of charge from resting voltage (estimate); same curve as the API.
 _SOC_POINTS = [(11.8, 0), (12.0, 25), (12.2, 50), (12.4, 75), (12.5, 90), (12.7, 100)]
@@ -160,7 +160,7 @@ class Panel:
         return value
 
     def cloud(self) -> dict:
-        """The staging API's view: stored /state (10 s), alerts (30 s) and the twin (120 s)."""
+        """The staging API's view: stored /state (10 s), device and system alerts (30 s) and the twin (120 s)."""
         if not self.api_url:
             return {"configured": False}
         now = time.monotonic()
@@ -170,6 +170,8 @@ class Panel:
         out["state"] = self._cloud_part("state", f"/api/devices/{dev}/state", now)
         out["twin"] = self._cloud_part("twin", f"/api/devices/{dev}/twin", now)
         out["alerts"] = self._cloud_part("alerts", f"/api/alerts?device_id={dev}&limit=20", now)
+        # Pipeline-wide alerts (e.g. slow cloud processing) have no device; the API files them under _system.
+        out["system_alerts"] = self._cloud_part("system_alerts", "/api/alerts?device_id=_system&limit=10", now)
         failed = [k for k in ("state", "twin") if isinstance(out.get(k), dict) and "error" in out[k]]
         out["checks"] = ([f"Couldn't read {' and '.join(failed)} from the staging API, so device and cloud "
                           "can't be fully compared"] if failed else []) + self._compare(out)
