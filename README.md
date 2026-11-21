@@ -221,7 +221,7 @@ The sim keeps its IoT Hub **device twin** up to date and accepts settings throug
 - **Desired settings persist in IoT Hub and override `config/default.yaml` at start-up** (logged as
   "overrides config"). Changes made while the sim is offline apply when it connects.
 - Keys and the twin can both change load and speed: the last change wins, and `settings` shows what's in use.
-- Each twin update counts as one message in the daily budget (a few dozen a day).
+- Twin reads and updates count in the daily budget in 0.5 KB blocks (a twin update is usually 1–2 messages).
 
 ## Web control panel (M6)
 
@@ -315,9 +315,25 @@ The same checks run in GitHub Actions on every pull request and push to `main` (
 
 ## Free-tier budget
 
-IoT Hub F1 allows **8,000 messages per UTC day for the whole hub**, and direct-method calls count too.
-Direct-method calls count too. The simulator counts its own telemetry and every command it receives in `.state/budget.json` (the count survives restarts and resets at 00:00 UTC) and stops sending at `budget.stop_at` (7,500 by default).
-One device at 60 s uses 1,440 messages a day.
+IoT Hub F1 allows **8,000 messages per UTC day for the whole hub**: telemetry, direct-method calls and device-twin
+reads and updates (twin traffic is billed in 0.5 KB blocks, so one read can cost several messages). The simulator
+counts its own telemetry, every command it receives and its twin reads and updates in `.state/budget.json` (the count
+survives restarts and resets at 00:00 UTC) and stops sending at `budget.stop_at` (7,500 by default).
+One device at 60 s uses 1,440 messages a day. The API's twin and live calls, and any other device, share the same
+8,000, so the hub can run out before the simulator's own count does.
+
+Guards against burning the day in minutes (as happened on 21 Nov 2026, when two copies fought over `ems-sim-01`):
+
+| Situation | What the simulator does |
+|---|---|
+| Another simulator already runs in this workspace | Refuses to start, before connecting, and names its PID |
+| The panel port is busy | Refuses to start, before connecting |
+| IoT Hub drops the connection 5 times within 60 s (another client uses the same device ID) | Stops with a message saying so, instead of reconnecting in a loop |
+| IoT Hub answers 403 (daily quota used up) | Stops with the reset time, instead of retrying |
+| One dropped connection | Skips that heartbeat, logs one line and carries on while the SDK reconnects |
+
+A copy in a Docker container or another Codespace isn't seen by the lock: stop those yourself (`docker ps`,
+github.com/codespaces).
 
 ## Several devices
 

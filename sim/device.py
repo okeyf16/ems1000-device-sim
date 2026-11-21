@@ -20,7 +20,7 @@ from .persist import next_boot_count
 from .physics import GeneratorModel
 from .state_machine import STATE_NAMES, Generator, RunState
 from .telemetry import PayloadError, build_payload, new_traceparent, validate
-from .transport import Transport
+from .transport import QUOTA_MESSAGE, Transport, is_quota_error
 from .twin import TwinManager
 
 log = logging.getLogger(__name__)
@@ -58,6 +58,16 @@ class VirtualDevice:
         self._wake = threading.Event()
         self.twin = TwinManager(self)
         self.transport.set_desired_handler(self.twin.on_desired_patch)
+        self.fatal_reason: str | None = None
+        self.transport.on_fatal = self.fatal
+
+    def fatal(self, reason: str) -> None:
+        """Stop the whole run (all simulated devices) for a reason that retrying would make
+        worse: a reconnect storm or the hub's daily quota."""
+        if self.fatal_reason is None:
+            self.fatal_reason = reason
+            log.error("[%s] stopping: %s", self.device_id, reason)
+        self.stop_event.set()
 
     def wake(self) -> None:
         """Re-check the heartbeat timer now (e.g. the interval was changed remotely)."""
@@ -123,7 +133,17 @@ class VirtualDevice:
             except PayloadError as err:
                 log.error("[%s] payload rejected, not sent: %s", self.device_id, err)
                 return False
-            self.transport.send_telemetry(body, new_traceparent())
+            try:
+                self.transport.send_telemetry(body, new_traceparent())
+            except Exception as err:  # noqa: BLE001 - a dropped connection must not end the run
+                if self.budget is not None:
+                    self.budget.record(-1)          # reserved but never sent
+                if is_quota_error(err):
+                    self.fatal(QUOTA_MESSAGE)
+                else:
+                    log.warning("[%s] %s #%d not sent: not connected to IoT Hub (%s); the SDK is "
+                                "reconnecting", self.device_id, reason, self.seq, type(err).__name__)
+                return False
             used = f" | budget {self.budget.used}/{self.cfg.daily_limit}" if self.budget else ""
             log.info("[%s] %s #%d sent (%dB)%s\n    %s", self.device_id, reason,
                      self.seq, len(body), used, body)
@@ -141,7 +161,13 @@ class VirtualDevice:
     def run(self, max_messages: int | None = None) -> None:
         log.info("[%s] boot #%d, heartbeat every %ss, model speed %gx, listening for commands",
                  self.device_id, self.boot, self.interval, self.speed)
-        self.transport.connect()
+        try:
+            self.transport.connect()
+        except Exception as err:  # noqa: BLE001
+            self.fatal(QUOTA_MESSAGE if is_quota_error(err) else
+                       f"could not connect to IoT Hub: {err} (check the connection string and the hub)")
+            self.transport.disconnect()
+            return
         self.twin.start()
         threading.Thread(target=self._ticker, name=f"{self.device_id}-model", daemon=True).start()
         try:

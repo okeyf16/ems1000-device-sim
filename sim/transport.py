@@ -6,7 +6,9 @@ swapped for raw paho-mqtt later without touching device logic.
 
 from __future__ import annotations
 
+import collections
 import logging
+import time
 from abc import ABC, abstractmethod
 from collections.abc import Callable
 from typing import Any
@@ -18,8 +20,54 @@ DesiredHandler = Callable[[dict], None]
 
 log = logging.getLogger(__name__)
 
+# More drops than this within the window means another client keeps taking over the
+# device's connection (IoT Hub allows one per device ID): stop instead of fighting.
+STORM_DROPS = 5
+STORM_WINDOW_S = 60.0
+
+QUOTA_MESSAGE = ("IoT Hub refused the device (403): most likely the free tier's daily message quota "
+                 "is used up. It resets at 00:00 UTC (01:00 WAT). Stopping so nothing retries meanwhile.")
+STORM_MESSAGE = ("IoT Hub dropped {device} {n} times in {window:.0f} s: another client is probably "
+                 "connected with the same device ID (another simulator, Codespace or container). "
+                 "Stopping to protect the daily message quota. Check: ps aux | grep '[c]li.py'")
+
+
+def is_quota_error(exc: BaseException | None) -> bool:
+    """Does this SDK error (or what caused it) say 403 / quota exceeded?"""
+    seen = 0
+    while exc is not None and seen < 5:
+        text = str(exc).lower()
+        if "403" in text or "quota" in text:
+            return True
+        exc = exc.__cause__ or exc.__context__
+        seen += 1
+    return False
+
+
+class StormGuard:
+    """Counts disconnects; reports once when they come too fast."""
+
+    def __init__(self, drops: int = STORM_DROPS, window_s: float = STORM_WINDOW_S, clock=time.monotonic):
+        self.drops, self.window_s, self._clock = drops, window_s, clock
+        self._times: collections.deque = collections.deque()
+        self.tripped = False
+
+    def disconnected(self) -> bool:
+        """Record a drop; True the first time the limit is reached."""
+        now = self._clock()
+        self._times.append(now)
+        while self._times and now - self._times[0] > self.window_s:
+            self._times.popleft()
+        if not self.tripped and len(self._times) >= self.drops:
+            self.tripped = True
+            return True
+        return False
+
 
 class Transport(ABC):
+    # Set by the device: called once with a reason when the run must stop (storm, quota)
+    on_fatal = None
+
     @abstractmethod
     def connect(self) -> None: ...
 
@@ -63,10 +111,19 @@ class AzureSdkTransport(Transport):
             connection_string, keep_alive=60
         )
         self._client.on_connection_state_change = self._on_state_change
+        self.storm = StormGuard()
 
     def _on_state_change(self) -> None:
-        state = "connected" if self._client.connected else "DISCONNECTED (SDK will retry)"
-        log.info("[%s] IoT Hub connection %s", self.device_id, state)
+        if self._client.connected:
+            log.info("[%s] IoT Hub connection connected", self.device_id)
+            return
+        if self.storm.disconnected():
+            reason = STORM_MESSAGE.format(device=self.device_id, n=self.storm.drops, window=self.storm.window_s)
+            log.error("[%s] %s", self.device_id, reason)
+            if self.on_fatal:
+                self.on_fatal(reason)
+        elif not self.storm.tripped:
+            log.info("[%s] IoT Hub connection DISCONNECTED (SDK will retry)", self.device_id)
 
     def set_method_handler(self, handler: MethodHandler) -> None:
         from azure.iot.device import MethodResponse
