@@ -4,7 +4,7 @@ As of 2026-11-21. Status: **plan agreed, not started**. The next step is the sta
 
 The digital twin is a fully virtual EMS-1000. Its job is to test the firmware, and find deployment risks, before hardware reaches a site. The recommended 80/20 plan takes about 140 hours in total over 4–5 weeks.
 
-> "Digital twin" here means the whole simulated system. It is not the IoT Hub **device twin** (`sim/twin.py`), which is the device's settings and reported properties in the cloud.
+> "Digital twin" here means the whole simulated system, and its files use the `digital-twin` name. "Twin" on its own in this repo (`sim/twin.py`) means the IoT Hub **device twin**: the device's settings and reported properties in the cloud.
 
 ![Digital twin running scenario 07: schematic, readings, telemetry, cloud alert and checker verdict](img/twin-snapshot.gif)
 
@@ -75,12 +75,12 @@ Six stages take about 45% of the full combined effort and deliver most of the fi
 
 | Stage | How A and B combine | Outcome | Steps | Firmware asks (Paul) | Total h |
 |---|---|---|---|---|---|
-| **0. Coupling trial** | B only: one Wokwi custom chip (voltage sensor) reads live values from the Python generator model | Proves or kills B's biggest risk first | 1. Free Wokwi account and Wokwi for VS Code in the Codespace. 2. Throwaway `twin/spike/` folder. 3. Go if values track the model within 1 s | None | ~11 |
+| **0. Coupling trial** | B only: one Wokwi custom chip (voltage sensor) reads live values from the Python generator model | Proves or kills B's biggest risk first | 1. Free Wokwi account and Wokwi for VS Code in the Codespace. 2. Throwaway `digital-twin/spike/` folder. 3. Go if values track the model within 1 s | None | ~11 |
 | **1. Firmware logic on a PC + interface check** | A only: the firmware's logic modules (state machine, fault flags, telemetry builder) built for a PC with fake hardware; checker against schema v1 | Most firmware bugs caught in seconds on every push | 1. `ems_contract.h` and checker in this repo. 2. Unity tests with coverage and memory checks. 3. Run in CI | Put hardware access behind one header (`ems_hal.h`); share the logic in a repo the twin can read | ~32–36 |
-| **2. Wokwi board twin** | B: the unchanged binary on a Wokwi ESP32, wired like the planned harness; stock parts where possible, custom chips for AC voltage, CT current and fuel sender | The real firmware drives real pins and talks MQTT to staging; the wiring diagram doubles as the harness reference | 1. `diagram.json` and 3 custom chips in `twin/board/`. 2. `sim-wokwi-01` device registered on the staging IoT Hub by script. 3. Live run against staging | Add a Wokwi build target (same code, Wokwi pin map) | ~31 |
+| **2. Wokwi board twin** | B: the unchanged binary on a Wokwi ESP32, wired like the planned harness; stock parts where possible, custom chips for AC voltage, CT current and fuel sender | The real firmware drives real pins and talks MQTT to staging; the wiring diagram doubles as the harness reference | 1. `diagram.json` and 3 custom chips in `digital-twin/board/`. 2. `sim-wokwi-01` device registered on the staging IoT Hub by script. 3. Live run against staging | Add a Wokwi build target (same code, Wokwi pin map) | ~31 |
 | **3. Equipment model + fault scenarios** | Shared: this simulator drives both the Wokwi chips and the PC build; 80/20 faults first; inverter/grid modelled as live source and changeover only | One scenario file gives the same verdict on the fast logic and the real binary | 1. YAML scenario format and runner. 2. An expected-result file per fault | Confirm fault thresholds | ~24 |
-| **4. Deployment risk checks** | Shared: LTspice for the CT burden resistor, ZMPT101B and the fuel-sender divider against the ESP32 ADC; site scenarios for brown-out, Wi-Fi loss, weak signal, clock drift and electrical noise | Wiring and site problems found on screen, plus a pre-install checklist | 1. LTspice files and a results note in `twin/circuits/`. 2. Site scenarios added to the runner | Review the circuit assumptions | ~24 |
-| **5. CI + basic agent control** | Both: PC build on every push; Wokwi short check on pull requests and the full set nightly; thin MCP server over the simulator | Every firmware change tested at two levels; scenarios run on request | 1. `twin-sil.yml` and `twin-wokwi.yml` workflows. 2. Wokwi Pro starts; `WOKWI_CLI_TOKEN` repo secret. 3. `twin-mcp` server | None | ~18 |
+| **4. Deployment risk checks** | Shared: LTspice for the CT burden resistor, ZMPT101B and the fuel-sender divider against the ESP32 ADC; site scenarios for brown-out, Wi-Fi loss, weak signal, clock drift and electrical noise | Wiring and site problems found on screen, plus a pre-install checklist | 1. LTspice files and a results note in `digital-twin/circuits/`. 2. Site scenarios added to the runner | Review the circuit assumptions | ~24 |
+| **5. CI + basic agent control** | Both: PC build on every push; Wokwi short check on pull requests and the full set nightly; thin MCP server over the simulator | Every firmware change tested at two levels; scenarios run on request | 1. `digital-twin-sil.yml` and `digital-twin-wokwi.yml` workflows. 2. Wokwi Pro starts; `WOKWI_CLI_TOKEN` repo secret. 3. `digital-twin-mcp` server | None | ~18 |
 | **6. Demo + synthetic data** | Deferred: the existing web panel and the Wokwi diagram serve as the demo | Nothing new yet; nothing blocked | None now | None | 0 |
 | **Total** | | | | | **~140–144** |
 
@@ -138,7 +138,7 @@ The equipment model and scenario runner sit at the centre, and CI and agents dri
 flowchart TB
     subgraph CODE["Code and automation"]
         FW["Firmware repo<br/>C, ems_hal.h"] --> GHA["GitHub Actions<br/>builds, runs suites"]
-        AG["AI agents<br/>Claude, LangChain, n8n"] --> MCP["twin-mcp server<br/>scenarios, faults"]
+        AG["AI agents<br/>Claude, LangChain, n8n"] --> MCP["digital-twin-mcp server<br/>scenarios, faults"]
     end
     subgraph TWIN["Digital twin"]
         LT["LTspice circuits<br/>sensor noise, error"] --> EQ["Equipment model<br/>+ scenario runner"]
@@ -165,7 +165,7 @@ flowchart TB
 
 ```text
 CODE AND AUTOMATION
-  Firmware repo --> GitHub Actions        AI agents --> twin-mcp server
+  Firmware repo --> GitHub Actions        AI agents --> digital-twin-mcp server
                          | push + nightly                   | on request
                          +--------------+   +---------------+
                                         v   v
@@ -191,11 +191,11 @@ One MCP server over the simulator, plus a small REST API, is the single automati
 
 | Interface | How it connects | First use |
 |---|---|---|
-| Claude (chat, Claude Code) | `twin-mcp` server: run scenario, inject fault, read telemetry, compare with cloud | "Run the won't-start set against tonight's build" |
+| Claude (chat, Claude Code) | `digital-twin-mcp` server: run scenario, inject fault, read telemetry, compare with cloud | "Run the won't-start set against tonight's build" |
 | Wokwi MCP (experimental) | The Wokwi CLI's MCP server: serial console, logs, virtual parts | Watching the real binary during a scenario |
 | LangChain / LangGraph | MCP adapters load the same tools | A test-runner agent that triages failures |
 | n8n | MCP Client Tool node, or REST webhooks | New firmware build → run suite → post results |
-| GitHub Actions | `twin-sil.yml` (every push), `twin-wokwi.yml` (PR + nightly) | Two-level regression on every change |
+| GitHub Actions | `digital-twin-sil.yml` (every push), `digital-twin-wokwi.yml` (PR + nightly) | Two-level regression on every change |
 
 - **Terraform** keeps owning the staging cloud. It can't register IoT Hub devices (the Azure provider has no device-identity resource), so the simulated device is registered by an `az iot` script step, like [`scripts/register_device.sh`](../../scripts/register_device.sh).
 - **Ansible** isn't needed now. It can't manage an ESP32, which has no SSH or Python. Later uses would be a production flashing and registration bench, or a Linux gateway if one is added.
@@ -246,5 +246,5 @@ The hours are ±30%, and they assume the firmware splits into logic and hardware
 **Next steps:**
 - [ ] Plan the stage 0 coupling trial (about 10 h) and confirm the go/no-go criteria
 - [ ] Confirm the logic can sit behind one `ems_hal.h` header, and which repo the twin can read
-- [ ] Agree the `twin/` folder layout in this repo
+- [ ] Agree the `digital-twin/` folder layout in this repo
 - [ ] Budget Wokwi Pro (€20/month) from stage 5
