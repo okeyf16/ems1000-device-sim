@@ -8,7 +8,7 @@ The digital twin is a fully virtual EMS-1000. Its job is to test the firmware, a
 
 ![Digital twin running scenario 07: schematic, readings, telemetry, cloud alert and checker verdict](img/twin-snapshot.gif)
 
-*Mock-up of the finished product running scenario 07 (grid outage, weak battery, low oil). The mobile app sends start commands through the API and IoT Hub, and later shows the alert.*
+*Mock-up of the finished product running scenario 07 (grid outage, weak battery, low oil). The ESP32 sends telemetry to Azure (IoT Hub + API) over MQTT; the mobile app sends start commands through Azure to the ESP32 and receives state and the alert back.*
 
 - **[Open the animated page](https://okeyf16.github.io/ems1000-device-sim/digital-twin/snapshot.html)**: full size, with a dark/light theme switch (add `#dark` to the link to open it dark).
 - [View or download the file](https://github.com/okeyf16/ems1000-device-sim/blob/main/docs/digital-twin/snapshot.html): one self-contained HTML file; save it and open it in any browser.
