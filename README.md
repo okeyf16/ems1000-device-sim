@@ -7,7 +7,7 @@ It connects to Azure IoT Hub over MQTT (TLS, port 8883) and sends the same telem
 
 [![CI](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml/badge.svg)](https://github.com/okeyf16/ems1000-device-sim/actions/workflows/ci.yml)
 
-Guides: [live tests](docs/TESTING.md) · [troubleshooting](docs/TROUBLESHOOTING.md) · [firmware build reference](docs/BUILD_REFERENCE.md)
+Guides: [live tests](docs/TESTING.md) · [troubleshooting](docs/TROUBLESHOOTING.md) · [firmware build reference](docs/BUILD_REFERENCE.md) · [digital twin plan](docs/twin/README.md)
 
 ## How it fits together
 
@@ -303,6 +303,7 @@ sim/twin.py           device twin: reported properties, desired settings (M5)
 sim/panel/            web control panel: server.py + static page (M6)
 config/scenarios/     scenario files (M3)
 docs/                 live test guide, troubleshooting (M4)
+docs/twin/            digital twin simulator plan + snapshot (planned)
 Dockerfile            headless container image (M4)
 .github/workflows/    CI: ruff, pytest, Docker build + smoke test (M4)
 sim/state_machine.py  Off/Crank/Run/Stop/Fault with background timers
