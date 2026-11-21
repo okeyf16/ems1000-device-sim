@@ -325,6 +325,10 @@ function ruleName(a) {
   }
   if (rule.includes("latency")) return "Cloud processing slow";
   if (rule === "device-offline") return "Device offline";
+  if (rule.includes("iothub-quota")) {
+    const q = /quota-(\d+)/.exec(rule);
+    return q ? `IoT Hub daily quota ${q[1]} % used` : "IoT Hub daily quota nearly used";
+  }
   return rule;
 }
 function renderCloud(c) {
