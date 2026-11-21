@@ -20,7 +20,9 @@ from datetime import UTC, datetime
 from typing import Any
 
 from . import __version__
+from .budget import blocks
 from .state_machine import STATE_NAMES
+from .transport import QUOTA_MESSAGE, is_quota_error
 
 log = logging.getLogger(__name__)
 
@@ -87,12 +89,18 @@ class TwinManager:
         if not self.enabled:
             return
         budget = self.device.budget
-        if budget is not None and not budget.try_consume():
+        cost = blocks(patch)
+        if budget is not None and not budget.try_consume(cost):
             log.warning("[%s] twin update skipped (daily budget reached)", self.device.device_id)
             return
         try:
             self.transport.patch_reported(patch)
-        except Exception:  # noqa: BLE001 - twin trouble must not stop the device
+        except Exception as err:  # noqa: BLE001 - twin trouble must not stop the device
+            if budget is not None:
+                budget.record(-cost)
+            if is_quota_error(err):
+                self.device.fatal(QUOTA_MESSAGE)
+                return
             log.exception("[%s] twin reported-properties update failed", self.device.device_id)
 
     def state_patch(self) -> dict:
@@ -152,9 +160,14 @@ class TwinManager:
         """After connect: read the twin, apply stored desired settings, report everything."""
         try:
             twin = self.transport.get_twin() or {}
-        except Exception:  # noqa: BLE001
+        except Exception as err:  # noqa: BLE001
+            if is_quota_error(err):
+                self.device.fatal(QUOTA_MESSAGE)
+                return
             log.exception("[%s] could not read the device twin; running without it", self.device.device_id)
             return
+        if self.device.budget is not None:
+            self.device.budget.record(blocks(twin))   # twin reads count too
         self.enabled = True
         desired = twin.get("desired") or {}
         old_status = (twin.get("reported") or {}).get("settings_status") or {}

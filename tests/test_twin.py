@@ -192,9 +192,11 @@ def test_interval_change_takes_effect_without_waiting_for_old_interval(tmp_path)
 
 
 def test_twin_reports_count_against_budget(tmp_path):
-    budget = BudgetGuard(tmp_path, stop_at=1, daily_limit=8000)
+    budget = BudgetGuard(tmp_path, stop_at=1000, daily_limit=8000)
     dev, t, _ = started(tmp_path, budget=budget)
-    assert len(t.reported_patches) == 1 and budget.used == 1
+    # the twin read and the start-up report both count, in 0.5 KB blocks
+    assert len(t.reported_patches) == 1 and budget.used >= 2
+    budget.stop_at = budget.used
     t.update_desired({"load_pct": 30})          # budget exhausted: applied, not reported
     assert dev.model.load == 0.3 and len(t.reported_patches) == 1
 

@@ -16,6 +16,19 @@ from .persist import StateFile
 log = logging.getLogger(__name__)
 
 
+FREE_TIER_BLOCK = 512   # the free tier meters twin and method traffic in 0.5 KB blocks
+
+
+def blocks(payload: object) -> int:
+    """How many messages a twin read or update costs on the free tier."""
+    import json
+    try:
+        size = len(json.dumps(payload, default=str).encode("utf-8"))
+    except (TypeError, ValueError):
+        size = 0
+    return max(1, -(-size // FREE_TIER_BLOCK))
+
+
 def _utc_day() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%d")
 
@@ -36,10 +49,11 @@ class BudgetGuard:
         return self._current(self._file.load())
 
     def record(self, n: int = 1) -> None:
-        """Count messages that are sent regardless of the guard (direct-method calls:
-        IoT Hub bills them against the same daily quota)."""
+        """Count messages that are sent regardless of the guard (direct-method calls and
+        twin reads: IoT Hub bills them against the same daily quota). A negative n gives
+        back messages that were reserved but never sent."""
         def _apply(data: dict) -> None:
-            data["count"] = self._current(data) + n
+            data["count"] = max(0, self._current(data) + n)
             data["day"] = self._today()
         self._file.update(_apply)
 

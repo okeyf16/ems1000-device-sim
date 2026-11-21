@@ -25,6 +25,7 @@ from sim.budget import BudgetGuard
 from sim.config import connection_string_for, load_config
 from sim.controls import Controls
 from sim.device import VirtualDevice
+from sim.instance import InstanceLock, port_free
 from sim.keyboard import start_keyboard
 from sim.panel.auth import Access, AccessError
 from sim.panel.server import Panel, serve
@@ -61,6 +62,21 @@ def cmd_run(args) -> int:
     signal.signal(signal.SIGINT, lambda *_: stop.set())
     signal.signal(signal.SIGTERM, lambda *_: stop.set())
 
+    # One simulator per workspace, and a free panel port, checked before anything connects:
+    # two copies with the same device ID knock each other off IoT Hub in a loop.
+    lock = InstanceLock(cfg.state_dir)
+    if not args.dry_run and not lock.acquire():
+        pid = f" (PID {lock.other_pid})" if lock.other_pid else ""
+        logging.error("Another simulator is already running in this workspace%s. Stop it first "
+                      "(Ctrl+C in its terminal, or: pkill -f 'cli.py run'), then start again.", pid)
+        return 3
+    panel_port = args.panel_port or cfg.panel_port
+    if args.panel and not port_free(args.panel_host, panel_port):
+        logging.error("Port %s is already in use, probably by another simulator. Stop it "
+                      "(pkill -f 'cli.py run'; also check docker ps), or use --panel-port %s.",
+                      panel_port, panel_port + 1)
+        return 3
+
     budget = None if args.dry_run else BudgetGuard(cfg.state_dir, cfg.stop_at, cfg.daily_limit)
     sims: list[VirtualDevice] = []
     for dev_id in devices:
@@ -93,14 +109,18 @@ def cmd_run(args) -> int:
         try:
             access = Access.from_env()   # viewer/operator PINs for sharing; solo if unset
             serve(Panel(controls, stop, cfg.panel_api_url, runner, api_key=cfg.panel_api_key), args.panel_host,
-                  args.panel_port or cfg.panel_port, access)
+                  panel_port, access)
         except AccessError as err:
             logging.error("Web panel not started: %s", err)
         except OSError as err:
-            logging.error("Web panel could not start on port %s: %s", args.panel_port or cfg.panel_port, err)
+            logging.error("Web panel could not start on port %s: %s", panel_port, err)
     while any(t.is_alive() for t in threads):
         for t in threads:
             t.join(timeout=0.5)
+    reasons = [s.fatal_reason for s in sims if s.fatal_reason]
+    if reasons:
+        logging.error("Simulator stopped: %s", reasons[0])
+        return 3
     return 0
 
 
