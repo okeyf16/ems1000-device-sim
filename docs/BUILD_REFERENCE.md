@@ -14,7 +14,7 @@ pre-read). Section numbers match the spec: A1 goes with section 1, A2 with secti
 | Username | `iot-ems1000-stg.azure-devices.net/<device id>/?api-version=2021-04-12` |
 | Password | `SharedAccessSignature sr=iot-ems1000-stg.azure-devices.net%2Fdevices%2F<device id>&sig=<signature>&se=<expiry epoch s>` |
 | TLS | 1.2 minimum; validate against DigiCert Global Root G2 |
-| Keep-alive | 60–240 s |
+| Keep-alive | 60–120 s. IoT Hub notices an unclean drop (power cut) only after about 1.5 × the keep-alive; staging then raises **Device offline** after a further 2 minutes. Longer keep-alives delay that alert |
 | After every connect | re-subscribe to the method and twin topics |
 
 ## A2. Telemetry

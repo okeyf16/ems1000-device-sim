@@ -22,6 +22,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -196,6 +197,15 @@ class Panel:
         if run is not None and run != int(self.device.generator.state):
             notes.append(f"Cloud state run={run} differs from device run="
                          f"{int(self.device.generator.state)} (normal for a few seconds after a change)")
+        link = resp.get("link") if isinstance(resp.get("link"), dict) else {}
+        if link.get("connection_status") == "Offline":
+            since = _parse_iso(link.get("last_status_change"))
+            received = _parse_iso(resp.get("received_at"))
+            # Offline, yet a message arrived after that: a Connected event was missed. Allow
+            # a minute and a half for Event Grid and the cloud's own correction.
+            if since is not None and received is not None and received > since and time.time() - since > 90:
+                notes.append("Cloud shows the device Offline although messages arrived after that "
+                             "(a Connected event was missed; the cloud corrects it within a minute)")
         twin = cloud.get("twin") or {}
         if "connection_state" in twin and twin["connection_state"] != "Connected":
             notes.append(f"IoT Hub reports the device as {twin['connection_state']}")
@@ -249,6 +259,16 @@ class Panel:
         t = threading.Thread(target=loop, name="panel-history", daemon=True)
         t.start()
         return t
+
+
+def _parse_iso(value) -> float | None:
+    """ISO 8601 with offset (the API's WAT times) -> epoch seconds; None if unreadable."""
+    if not isinstance(value, str):
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
 
 
 def _http_get_json(url: str, api_key: str | None = None) -> dict:
