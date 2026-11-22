@@ -5,9 +5,9 @@ messages are used by the panel itself; its buttons go through the same local
 controls as the keyboard shortcuts.
 
 Access: solo by default (127.0.0.1, reached through the Codespace's private forwarded
-port). Set EMS_PANEL_VIEWER_PIN and EMS_PANEL_OPERATOR_PIN to share it: then every page
-and API call needs a session from the login page (see auth.py), viewers are read-only
-and only operators can use the controls. Every write also needs the `X-EMS-Panel`
+port). Define people in EMS_PANEL_USERS (Name:role:PIN) to share it: then every page
+and API call needs a session from the login page (see auth.py), viewers are read-only,
+only operators can use the controls, and everyone sees who is signed in. Every write also needs the `X-EMS-Panel`
 header and a JSON body: browsers won't let another website send those without a CORS
 preflight, which this server never approves, so other sites can't trigger actions.
 """
@@ -30,7 +30,7 @@ from pathlib import Path
 from ..controls import ACTION_NAMES, Controls
 from ..physics import ALERT_FREQUENCY, ALERT_VOLTAGE, FAULT_LOW_BATTERY, FAULT_LOW_FUEL, FAULT_LOW_OIL, FAULT_OVER_TEMP
 from ..scenario import ScenarioRunner, available, load_scenario, start_scenario
-from .auth import COOKIE, OPERATOR, Access, cookie_value
+from .auth import COOKIE, OPERATOR, SOLO, Access, User, cookie_value
 
 log = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ HISTORY_POINTS = 900          # 30 min at one point every 2 s
 HISTORY_EVERY_S = 2.0
 # Cloud view refresh: the stored state and alerts are table reads (free); twin reads count
 # against the IoT Hub's 8,000 daily messages, so the twin is read far less often.
-CLOUD_TTL_S = {"state": 10.0, "alerts": 30.0, "system_alerts": 30.0, "twin": 120.0}
+CLOUD_TTL_S = {"state": 10.0, "alerts": 30.0, "system_alerts": 30.0, "twin": 120.0, "api_access": 60.0}
 
 # 12 V lead-acid state of charge from resting voltage (estimate); same curve as the API.
 _SOC_POINTS = [(11.8, 0), (12.0, 25), (12.2, 50), (12.4, 75), (12.5, 90), (12.7, 100)]
@@ -177,6 +177,8 @@ class Panel:
         out["alerts"] = self._cloud_part("alerts", f"/api/alerts?device_id={dev}&limit=20", now)
         # Pipeline-wide alerts (e.g. slow cloud processing) have no device; the API files them under _system.
         out["system_alerts"] = self._cloud_part("system_alerts", "/api/alerts?device_id=_system&limit=10", now)
+        # Who used the staging API today (people signed in with Microsoft, and API keys)
+        out["api_access"] = self._cloud_part("api_access", "/api/access?days=1", now)
         failed = [k for k in ("state", "twin") if isinstance(out.get(k), dict) and "error" in out[k]]
         out["checks"] = ([f"Couldn't read {' and '.join(failed)} from the staging API, so device and cloud "
                           "can't be fully compared"] if failed else []) + self._compare(out)
@@ -325,11 +327,11 @@ class _Handler(BaseHTTPRequestHandler):
         self._send(302, b"", "text/plain", {"Location": where})
 
     # ---- sessions ----------------------------------------------------------------------
-    def _role(self) -> str | None:
-        """operator in solo mode; otherwise the role in a valid session cookie, or None."""
+    def _user(self) -> User | None:
+        """'you' (operator) in solo mode; otherwise the signed-in person, or None."""
         if not self.access.sharing:
-            return OPERATOR
-        return self.access.role_of(cookie_value(self.headers.get("Cookie")))
+            return SOLO
+        return self.access.session_of(cookie_value(self.headers.get("Cookie")))
 
     def _client(self) -> str:
         # Codespaces forwards through a proxy that appends the visitor's address to
@@ -341,13 +343,14 @@ class _Handler(BaseHTTPRequestHandler):
         secure = "; Secure" if (self.headers.get("X-Forwarded-Proto") or "").lower() == "https" else ""
         return {"Set-Cookie": f"{COOKIE}={value}; Max-Age={max_age}; Path=/; HttpOnly; SameSite=Strict{secure}"}
 
-    def _actor(self, role: str) -> str | None:
-        return role if self.access.sharing else None
+    def _actor(self, user: User) -> str | None:
+        return user.name if self.access.sharing else None
 
     # ---- GET ----------------------------------------------------------------------------
     def do_GET(self):  # noqa: N802
         path, _, query = self.path.partition("?")
-        role = self._role()
+        user = self._user()
+        role = user.role if user else None
         if path == "/login" and (not self.access.sharing or role):
             return self._redirect("/")
         if path in STATIC_FILES:
@@ -364,7 +367,9 @@ class _Handler(BaseHTTPRequestHandler):
         p = self.panel
         try:
             if path == "/api/session":
-                return self._json(200, {"sharing": self.access.sharing, "role": role})
+                return self._json(200, {"sharing": self.access.sharing, "role": role,
+                                        "name": user.name if self.access.sharing else None,
+                                        "signed_in": self.access.signed_in()})
             if path == "/api/live":
                 return self._json(200, p.live())
             if path == "/api/history":
@@ -400,14 +405,18 @@ class _Handler(BaseHTTPRequestHandler):
         if self.path == "/api/login":
             return self._login(body)
         if self.path == "/api/logout":
+            user = self.access.session_of(cookie_value(self.headers.get("Cookie")), touch=False)
+            self.access.sign_out(cookie_value(self.headers.get("Cookie")))
+            if user:
+                self.panel._log(f"[{user.name}] signed out")
             return self._json(200, {"ok": True}, self._cookie("", 0))
 
-        role = self._role()
-        if role is None:
+        user = self._user()
+        if user is None:
             return self._json(401, {"error": "login required", "login": "/login"})
-        if role != OPERATOR:
-            return self._json(403, {"error": "View only: sign in with the operator PIN to use the controls"})
-        p, actor = self.panel, self._actor(role)
+        if user.role != OPERATOR:
+            return self._json(403, {"error": "View only: your PIN is a viewer PIN, so the controls are locked"})
+        p, actor = self.panel, self._actor(user)
         try:
             if self.path == "/api/action":
                 return self._json(200, p.action(str(body.get("action", "")), body.get("value"), actor))
@@ -427,13 +436,14 @@ class _Handler(BaseHTTPRequestHandler):
         if wait:
             return self._json(429, {"error": f"Too many wrong PINs. Try again in {wait} s."},
                               {"Retry-After": str(wait)})
-        role = self.access.login(str(body.get("pin", "")), client)
-        if role is None:
+        user = self.access.login(str(body.get("pin", "")), client)
+        if user is None:
             log.warning("[panel] wrong PIN from %s", client)
             return self._json(401, {"error": "Wrong PIN"})
-        self.panel._log(f"[{role}] signed in")
-        return self._json(200, {"ok": True, "role": role},
-                          self._cookie(self.access.issue(role), self.access.session_s))
+        self.panel._log(f"[{user.name}] signed in ({user.role})")
+        log.info("[panel] %s signed in (%s)", user.name, user.role)
+        return self._json(200, {"ok": True, "role": user.role, "name": user.name},
+                          self._cookie(self.access.issue(user), self.access.session_s))
 
     def do_OPTIONS(self):  # noqa: N802 - never approve cross-origin requests
         self._json(403, {"error": "cross-origin requests are not allowed"})
@@ -450,9 +460,9 @@ def serve(panel: Panel, host: str = "127.0.0.1", port: int = 8080,
     log.info("Web panel on http://%s:%d  (Codespaces: Ports tab -> 8080 -> Open in Browser)",
              "localhost" if host in ("127.0.0.1", "0.0.0.0") else host, httpd.server_address[1])
     if access.sharing:
-        log.info("Panel sharing is on: sign-in required (viewer PIN = read-only, operator PIN = controls). "
-                 "To share, set port 8080 to Public in the Ports tab and send the link.")
+        people = ", ".join(f"{u['name']} ({u['role']})" for u in access.roster())
+        log.info("Panel sharing is on for: %s. To share, set port 8080 to Public in the Ports tab "
+                 "and send the link.", people)
     elif host not in ("127.0.0.1", "localhost", "::1"):
-        log.warning("Web panel listens on %s with no PINs: set EMS_PANEL_VIEWER_PIN and "
-                    "EMS_PANEL_OPERATOR_PIN before exposing it", host)
+        log.warning("Web panel listens on %s with no PINs: set EMS_PANEL_USERS before exposing it", host)
     return httpd

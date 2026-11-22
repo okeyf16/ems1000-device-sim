@@ -33,11 +33,14 @@ Problems met while building the EMS-1000 staging pipeline, by symptom. Pipeline:
 | *What Azure holds* says "API key missing or wrong" or "No API key" | `EMS_API_KEY` not set, or an old key after rotation | Add or update the Codespace secret `EMS_API_KEY` (staging output `api_keys`), then restart the Codespace or the simulator |
 | *What Azure holds* shows HTTP errors | Staging API down, quota exceeded (403), or wrong `panel.api_url` | Open the API's `/docs`; App Service quotas (see README); check the URL |
 | Cloud view says the last message is old | Telemetry isn't reaching Azure | See *Telemetry doesn't arrive* below |
-| "Web panel not started: Set both EMS_PANEL_VIEWER_PIN and …" | Only one PIN secret set, a PIN under 6 characters, or both the same | Fix the Codespace secrets, restart the Codespace, start the sim again |
+| "Web panel not started: EMS_PANEL_USERS entry n …" | That entry is malformed (needs `Name:role:PIN`), has an unknown role, a short PIN, or repeats a name or PIN | Fix the entry in the Codespace secret, restart the Codespace; `python cli.py panel-users` checks it |
+| "Web panel not started: Set both EMS_PANEL_VIEWER_PIN and …" | Older two-PIN setup with only one set | Switch to `EMS_PANEL_USERS`, or set both |
+| Someone can't sign in any more | Their entry was removed or their PIN changed | Send them their current PIN |
+| Someone isn't in the Signed in list | Not active in the last 15 minutes, or signed out | Nothing to fix |
 | A visitor sees a GitHub sign-in page instead of the panel's PIN page | Port 8080 is Private (it can reset after a restart) | Ports tab → right-click 8080 → **Port visibility** → **Public** |
 | The shared link doesn't load at all | Your Codespace stopped (idle timeout) or the sim isn't running with `--panel` | Start the Codespace and the sim; raise the idle timeout (README, *Sharing the panel*) |
 | "Too many wrong PINs. Try again in N s." | Five wrong PINs from that address in 5 minutes | Wait it out; check the PIN you sent them |
-| Controls are greyed out | Signed in with the viewer PIN | **Sign out**, sign in with the operator PIN |
+| Controls are greyed out | Signed in with a viewer PIN | Give that person an operator entry, or sign in with yours |
 | Everyone was signed out | A PIN changed (sessions are tied to the PINs) or 12 h passed | Sign in again |
 
 ## Telemetry doesn't arrive

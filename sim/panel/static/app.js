@@ -403,6 +403,21 @@ function renderCloud(c) {
     }
   }
 
+  // Who used the staging API today (Microsoft sign-in or an API key); hidden until staging has /api/access
+  const acc = c.api_access || {};
+  if (!acc.error && Array.isArray(acc.users)) {
+    host.append(el("h3", {}, "API users today"));
+    if (!acc.users.length) host.append(el("p", { class: "hint" }, "No API calls recorded today."));
+    else {
+      const ul = el("ul", { class: "api-users" });
+      for (const u of acc.users.slice(0, 8)) {
+        const last = u.last_seen ? ago(Date.parse(u.last_seen)) : "–";
+        ul.append(el("li", {}, `${u.who} (${u.kind === "entra" ? "Microsoft sign-in" : "API key"}): ${u.calls} calls, last ${last}`));
+      }
+      host.append(ul);
+    }
+  }
+
   host.append(el("h3", {}, "Checks"));
   if (c.checks && c.checks.length) {
     const ul = el("ul", { class: "checks" });
@@ -474,7 +489,11 @@ async function initSession() {
   try { s = await api("/api/session"); } catch { return; }
   if (!s.sharing) return;
   const tools = document.querySelector(".plate-tools");
-  tools.append(el("span", { class: `role-badge ${s.role}` }, s.role === "operator" ? "Operator" : "Viewer"));
+  tools.append(el("span", { class: `role-badge ${s.role}` }, `${s.name} · ${s.role === "operator" ? "Operator" : "Viewer"}`));
+  renderPeople(s.signed_in || [], s.name);
+  every(20000, async () => {
+    try { const now = await api("/api/session"); renderPeople(now.signed_in || [], now.name); } catch { /* next round */ }
+  });
   const out = el("button", { class: "btn", type: "button", id: "sign-out" }, "Sign out");
   out.addEventListener("click", async () => {
     await api("/api/logout", {}).catch(() => {});
@@ -486,7 +505,22 @@ async function initSession() {
     const controls = document.querySelector(".controls");
     controls.querySelectorAll("button, input, select").forEach((n) => { n.disabled = true; });
     controls.prepend(el("p", { class: "hint view-only-note" },
-      "View only: you signed in with the viewer PIN. The operator PIN unlocks the controls."));
+      "View only: your PIN is a viewer PIN. Ask for an operator PIN to use the controls."));
+  }
+}
+
+// Shared panel: who has used it in the last 15 minutes (visible to viewers and operators)
+function renderPeople(list, me) {
+  const box = $("people-box"), ul = $("people");
+  box.hidden = false;
+  ul.replaceChildren();
+  if (!list.length) { ul.append(el("li", { class: "hint" }, "Nobody else right now")); return; }
+  for (const p of list) {
+    const when = p.idle_s < 60 ? "active now" : `${Math.round(p.idle_s / 60)} min ago`;
+    const li = el("li", { class: `person ${p.role}` });
+    li.append(el("span", { class: "person-name" }, p.name + (p.name === me ? " (you)" : "")),
+              el("span", { class: "person-meta" }, `${p.role}, ${when}`));
+    ul.append(li);
   }
 }
 

@@ -139,6 +139,21 @@ def cmd_budget(args) -> int:
     return 0
 
 
+def cmd_panel_users(args) -> int:
+    """Who can sign in to the shared panel (names and roles, never PINs)."""
+    try:
+        access = Access.from_env()
+    except AccessError as err:
+        print(f"Problem with the panel users: {err}")
+        return 2
+    if not access.sharing:
+        print("Solo mode: no panel users defined (set EMS_PANEL_USERS to share the panel).")
+        return 0
+    for u in access.roster():
+        print(f"{u['name']:<24} {u['role']}")
+    return 0
+
+
 def main(argv=None) -> int:
     p = argparse.ArgumentParser(description="EMS-1000 virtual device simulator")
     p.add_argument("--config", help="path to YAML config (default: config/default.yaml)")
@@ -164,6 +179,8 @@ def main(argv=None) -> int:
     sc = sub.add_parser("scenarios", help="list the scenarios")
     sc.set_defaults(fn=cmd_scenarios)
 
+    pu = sub.add_parser("panel-users", help="list who can sign in to the shared panel (no PINs)")
+    pu.set_defaults(fn=cmd_panel_users)
     b = sub.add_parser("budget", help="show today's message count")
     b.set_defaults(fn=cmd_budget)
 
