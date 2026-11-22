@@ -256,34 +256,49 @@ In a Codespace, a notification offers **Open in Browser** for port 8080 (or use 
 
 ## Sharing the panel
 
-Give Paul or the team a link, with two levels of access:
+Give Paul or the team a link. Everyone gets their own PIN, with one of two roles:
 
-| PIN | Can |
+| Role | Can |
 |---|---|
-| **Viewer** | Watch everything: gauges, faults, history, alerts, the cloud view. Controls are greyed out and refused by the panel |
-| **Operator** | Everything a viewer can, plus start/stop, load, faults, speed and scenarios. "Last actions" names the role behind each action |
+| **viewer** | Watch everything: gauges, faults, history, alerts, the cloud view and who's signed in. Controls are greyed out and refused by the panel |
+| **operator** | Everything a viewer can, plus start/stop, load, faults, speed and scenarios |
 
-1. **Set the PINs once** as Codespace secrets (repo → Settings → Secrets and variables → **Codespaces**):
-   `EMS_PANEL_VIEWER_PIN` and `EMS_PANEL_OPERATOR_PIN`, at least 6 characters and different from each other.
-   Then stop and start the Codespace so it picks them up (`printenv EMS_PANEL_VIEWER_PIN | wc -c` should be more than 6).
-2. **Start the panel** as usual: `python cli.py run --interval 10 --panel`. The log says
-   "Panel sharing is on". Everyone, you included, now signs in on the panel's login page.
-3. **Make the port public:** Ports tab → right-click **8080** → **Port visibility** → **Public**.
+"Last actions" names the person behind each action (`[Paul] start: 200 accepted`), and the **Signed in** list
+(top of the right-hand column) shows everyone active in the last 15 minutes, to viewers too.
+
+1. **Define the people** in one Codespace secret, `EMS_PANEL_USERS` (repo → Settings → Secrets and variables →
+   **Codespaces**), as comma-separated `Name:role:PIN` entries:
+   ```
+   Okey:operator:482913, Paul:operator:771024, Emeka:viewer:305518
+   ```
+   Names: up to 32 letters, digits, spaces, `.`, `_` or `-`. Roles: `viewer` or `operator`. PINs: at least
+   6 characters, all different.
+2. **Restart the Codespace** so it picks up the secret, then check: `python cli.py panel-users` lists the names and
+   roles it found (never the PINs).
+3. **Start the panel**: `python cli.py run --interval 60 --panel`. The log lists who can sign in. Everyone,
+   you included, signs in on the panel's PIN page.
+4. **Make the port public:** Ports tab → right-click **8080** → **Port visibility** → **Public**.
    (From your own computer instead: `gh codespace ports visibility 8080:public -c <codespace-name>`.)
-4. **Send the link:** `https://<codespace-name>-8080.app.github.dev`. It stays the same across stops and restarts of
-   this Codespace; it only changes if you create a new one. Send each person the PIN for their level separately.
+5. **Send the link** `https://<codespace-name>-8080.app.github.dev` (stable across stops and restarts of this
+   Codespace), and each person their own PIN, separately.
+
+**Adding, removing, changing a PIN:** edit `EMS_PANEL_USERS` (add, delete or change that person's entry), restart
+the Codespace and the simulator. A removed person, or one whose PIN changed, is signed out on their next click;
+everyone else stays signed in. To cut everyone off at once, set the optional secret `EMS_PANEL_SECRET` to a new
+random value.
 
 Good to know:
 - **The link works only while your Codespace runs and the simulator is started.** Codespaces stop after 30 minutes
-  without activity by default (a running simulator doesn't count). Raise it to up to 4 hours at
-  github.com → Settings → Codespaces → **Default idle timeout**. For a link that works around the clock, the plan is
-  to host the panel in Azure (stage 2).
+  without activity by default (a running simulator doesn't count); raise it to up to 4 hours at
+  github.com → Settings → Codespaces → **Default idle timeout**.
 - **Check the port visibility after a restart**: it can go back to Private, and then visitors see a GitHub sign-in page.
-- **Sessions last 12 hours** and survive restarts. Five wrong PINs from one address lock it out for 5 minutes.
-- **To cut everyone off**, change either PIN (and restart the Codespace): all sessions end. To stop sharing, set the
-  port back to **Private**, or remove both secrets to return to solo mode.
-- Setting only one of the two PINs, a PIN under 6 characters or the same PIN twice stops the panel from starting,
-  with the reason in the log.
+- **Sessions last 12 hours.** Five wrong PINs from one address lock it out for 5 minutes.
+- A bad entry (missing role, short PIN, duplicate name or PIN) stops the panel from starting; the log names the
+  entry, never the PIN.
+- The older `EMS_PANEL_VIEWER_PIN` / `EMS_PANEL_OPERATOR_PIN` pair still works (as "Viewer" and "Operator") until
+  `EMS_PANEL_USERS` is set; then delete those two secrets.
+- **API users today** (in the cloud view) lists who called the staging API today: people signed in with Microsoft
+  and the API keys. It appears once staging has the `/api/access` endpoint.
 
 ## Docker
 

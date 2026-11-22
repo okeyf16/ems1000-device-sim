@@ -148,11 +148,12 @@ def test_cloud_view_agrees_and_is_cached(tmp_path):
     assert calls == ["https://api.example/api/devices/ems-sim-01/state",
                      "https://api.example/api/devices/ems-sim-01/twin",
                      "https://api.example/api/alerts?device_id=ems-sim-01&limit=20",
-                     "https://api.example/api/alerts?device_id=_system&limit=10"]
+                     "https://api.example/api/alerts?device_id=_system&limit=10",
+                     "https://api.example/api/access?days=1"]
     assert c["alerts"]["alerts"][0]["id"] == "a1"
     assert "alerts" in c["system_alerts"]
     p.cloud()
-    assert len(calls) == 4            # all cached
+    assert len(calls) == 5            # all cached
 
 
 def test_twin_read_less_often_than_state(tmp_path, monkeypatch):

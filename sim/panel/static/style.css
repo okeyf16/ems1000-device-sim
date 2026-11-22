@@ -236,3 +236,13 @@ select { font: inherit; padding: 7px 8px; border-radius: 6px; border: 1px solid 
 .role-badge.operator { color: var(--ok); }
 .view-only-note { margin: 0 0 10px; }
 .viewer .controls button:disabled, .viewer .controls input:disabled, .viewer .controls select:disabled { opacity: .45; cursor: not-allowed; }
+
+/* ---- shared panel: who's signed in, API users ---- */
+.people { margin-bottom: 14px; }
+.people-list, .api-users { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.person { display: flex; justify-content: space-between; gap: 8px; padding: 4px 8px; border-radius: 6px; background: var(--input-bg); }
+.person-name { font-weight: 600; }
+.person-meta { color: var(--ink-soft); font-size: .88rem; white-space: nowrap; }
+.person.operator .person-name::before { content: "●"; color: var(--ok); margin-right: 6px; }
+.person.viewer .person-name::before { content: "○"; color: var(--ink-soft); margin-right: 6px; }
+.api-users li { font-size: .9rem; overflow-wrap: anywhere; }
